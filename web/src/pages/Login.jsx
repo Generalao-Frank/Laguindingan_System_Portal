@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ShieldCheck, Lock, User, ArrowRight, Info, Eye, EyeOff } from 'lucide-react';
+import { ShieldCheck, Lock, User, Eye, EyeOff } from 'lucide-react';
 import schoolLogo from '../assets/les_logo.png';
 import API_URL from '../config';
 
@@ -10,8 +10,6 @@ const Login = ({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const videoRef = useRef(null);
-
-
 
   // Force video to play
   useEffect(() => {
@@ -39,20 +37,18 @@ const Login = ({ onLogin }) => {
         body: JSON.stringify({ 
           username: username,
           password: password,
-           device_type: 'web' 
+          device_type: 'web' 
         }),
       });
 
       const data = await response.json();
 
       if (response.ok && data.success) {
-        // Store user data in localStorage
-          localStorage.setItem('userToken', data.token);
-    localStorage.setItem('userRole', data.user.role);
-    localStorage.setItem('userData', JSON.stringify(data.user));
-    localStorage.setItem('userProfilePicture', data.user.profile_picture_url || '');
+        localStorage.setItem('userToken', data.token);
+        localStorage.setItem('userRole', data.user.role);
+        localStorage.setItem('userData', JSON.stringify(data.user));
+        localStorage.setItem('userProfilePicture', data.user.profile_picture_url || '');
         
-        // Trigger the app to update
         onLogin(data.user.role);
       } else {
         setError(data.message || 'Invalid username or password. Please try again.');
@@ -118,10 +114,10 @@ const Login = ({ onLogin }) => {
                 </div>
               )}
               
-              {/* Username Field - Changed from Email */}
+              {/* Username Field */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-indigo-200 uppercase tracking-wider ml-1">
-                  Username (LRN or Employee ID)
+                  Username
                 </label>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-300 group-focus-within:text-white transition-colors">
@@ -129,7 +125,7 @@ const Login = ({ onLogin }) => {
                   </div>
                   <input 
                     type="text" 
-                    placeholder="Enter your LRN (Student) or Employee ID (Teacher/Admin)"
+                    placeholder="Enter your username"
                     className="w-full pl-11 pr-4 py-3 bg-white/20 border border-white/20 rounded-xl focus:bg-white/30 focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none transition-all font-medium text-white placeholder:text-white/50"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
@@ -179,50 +175,13 @@ const Login = ({ onLogin }) => {
                 {isLoading ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                 ) : (
-                  <>
-                    Sign In to Dashboard
-                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                  </>
+                  "Sign In"
                 )}
               </button>
             </form>
-
-            {/* Demo Hint Box - Updated credentials based on migration */}
-            <div className="mt-6 p-3 bg-indigo-500/20 backdrop-blur-sm border border-indigo-400/30 rounded-xl">
-              <div className="flex items-start gap-2 mb-2">
-                <Info size={14} className="text-indigo-300 mt-0.5 flex-shrink-0" />
-                <p className="text-[11px] font-bold text-white">Demo Credentials:</p>
-              </div>
-              <div className="space-y-1.5 text-[10px] font-medium text-indigo-200">
-                <div className="flex justify-between items-center">
-                  <span className="flex items-center gap-2">
-                    <ShieldCheck size={10} className="text-indigo-300" />
-                    <span>Admin:</span>
-                  </span>
-                  <code className="bg-indigo-500/30 px-1.5 py-0.5 rounded text-white">admin / admin123</code>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="flex items-center gap-2">
-                    <User size={10} className="text-indigo-300" />
-                    <span>Teacher:</span>
-                  </span>
-                  <code className="bg-indigo-500/30 px-1.5 py-0.5 rounded text-white">TCH-2024-001 / password123</code>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="flex items-center gap-2">
-                    <User size={10} className="text-indigo-300" />
-                    <span>Student:</span>
-                  </span>
-                  <code className="bg-indigo-500/30 px-1.5 py-0.5 rounded text-white">123456789012 / 2015-05-15</code>
-                </div>
-              </div>
-              <p className="text-[8px] text-indigo-300/60 mt-2 text-center">
-                Make sure your Laravel backend is running on port 8000
-              </p>
-            </div>
           </div>
 
-          {/* Footer info */}
+          {/* Footer */}
           <div className="text-center mt-8 space-y-3">
             <div className="flex justify-center gap-6">
               <button className="text-[10px] font-medium text-indigo-200/70 hover:text-white transition-colors uppercase tracking-wider">
@@ -238,7 +197,7 @@ const Login = ({ onLogin }) => {
             </p>
             <div className="flex items-center justify-center gap-1.5 text-indigo-300/40 text-[8px]">
               <ShieldCheck size={10} />
-              <span>LES Portal 2026 — Role-Based Access</span>
+              <span>© LES Portal 2026</span>
             </div>
           </div>
         </div>

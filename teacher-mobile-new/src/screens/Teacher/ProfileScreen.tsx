@@ -8,7 +8,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, CommonActions } from '@react-navigation/native';
-import apiClient from '../api/client';
+import apiClient from '../../api/client';
 
 interface Profile {
   first_name: string;
@@ -21,11 +21,15 @@ interface Profile {
   profile_picture_url?: string;
 }
 
+interface ProfileScreenProps {
+  onLogout?: () => void;
+}
+
 const STORAGE_KEYS = {
   PROFILE_PICTURE: 'user_profile_picture_url',
 };
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
   const navigation = useNavigation();
   const colors = {
     background: '#F9F7F2',
@@ -46,15 +50,26 @@ export default function ProfileScreen() {
   const [uploading, setUploading] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const getFullImageUrl = (url?: string) => {
     if (!url) return undefined;
     if (url.startsWith('http')) return url;
-    return `http://192.168.1.64:8000${url}`;
+    return `http://10.0.0.79:8000${url}`;
   };
 
   const fetchProfile = async () => {
+    // Huwag mag-fetch kung naglo-logout na
+    if (isLoggingOut) return;
+    
     try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        console.log('No token found, skipping profile fetch');
+        setLoading(false);
+        return;
+      }
+      
       const res = await apiClient.get('/teacher/profile');
       let pictureUrl = res.data.profile_picture_url || res.data.profile_picture;
       if (!pictureUrl) {
@@ -63,7 +78,13 @@ export default function ProfileScreen() {
       setProfile({ ...res.data, profile_picture_url: pictureUrl });
       setFormData(res.data);
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to load');
+      if (err.response?.status === 401) {
+        console.log('Unauthorized, token may be expired');
+        // Huwag magpakita ng error kung 401
+      } else {
+        console.error('Failed to fetch profile:', err);
+        Alert.alert('Error', err.response?.data?.message || 'Failed to load');
+      }
     } finally {
       setLoading(false);
     }
@@ -116,41 +137,40 @@ export default function ProfileScreen() {
       await uploadImage(result.assets[0].uri);
     }
   };
-const uploadImage = async (uri: string) => {
-  setUploading(true);
-  const formData = new FormData();
-  formData.append('profile_picture', {
-    uri,
-    name: 'profile.jpg',
-    type: 'image/jpeg',
-  } as any);
-  try {
-    const res = await apiClient.post('/upload-profile', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    if (res.data.success && res.data.profile_picture_url) {
-      const pictureUrl = res.data.profile_picture_url;
-      // Store in AsyncStorage for device persistence (fallback)
-      await AsyncStorage.setItem(STORAGE_KEYS.PROFILE_PICTURE, pictureUrl);
-      // Save to backend user record using dedicated endpoint
-      try {
-        await apiClient.post('/teacher/update-profile-picture', { profile_picture: pictureUrl });
-        console.log('Picture URL saved to backend user record');
-      } catch (updateErr) {
-        console.warn('Could not save picture URL to backend', updateErr);
+
+  const uploadImage = async (uri: string) => {
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('profile_picture', {
+      uri,
+      name: 'profile.jpg',
+      type: 'image/jpeg',
+    } as any);
+    try {
+      const res = await apiClient.post('/upload-profile', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (res.data.success && res.data.profile_picture_url) {
+        const pictureUrl = res.data.profile_picture_url;
+        await AsyncStorage.setItem(STORAGE_KEYS.PROFILE_PICTURE, pictureUrl);
+        try {
+          await apiClient.post('/teacher/update-profile-picture', { profile_picture: pictureUrl });
+          console.log('Picture URL saved to backend user record');
+        } catch (updateErr) {
+          console.warn('Could not save picture URL to backend', updateErr);
+        }
+        setProfile(prev => prev ? { ...prev, profile_picture_url: pictureUrl } : prev);
+        Alert.alert('Success', 'Profile picture updated');
+      } else {
+        Alert.alert('Error', 'Failed to update picture');
       }
-      setProfile(prev => prev ? { ...prev, profile_picture_url: pictureUrl } : prev);
-      Alert.alert('Success', 'Profile picture updated');
-    } else {
-      Alert.alert('Error', 'Failed to update picture');
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      Alert.alert('Error', err.response?.data?.message || 'Upload failed');
+    } finally {
+      setUploading(false);
     }
-  } catch (err: any) {
-    console.error('Upload error:', err);
-    Alert.alert('Error', err.response?.data?.message || 'Upload failed');
-  } finally {
-    setUploading(false);
-  }
-};
+  };
 
   const handleLogout = async () => {
     Alert.alert(
@@ -162,14 +182,25 @@ const uploadImage = async (uri: string) => {
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
+            setIsLoggingOut(true);
+            
+            // Clear all storage
             await AsyncStorage.removeItem('userToken');
-            // Keep picture in storage
-            navigation.dispatch(
-              CommonActions.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-              })
-            );
+            await AsyncStorage.removeItem('userRole');
+            await AsyncStorage.removeItem('user');
+            
+            // Call the onLogout callback if provided
+            if (onLogout) {
+              onLogout();
+            } else {
+              // Fallback: navigation reset
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'Login' }],
+                })
+              );
+            }
           },
         },
       ]
@@ -185,7 +216,7 @@ const uploadImage = async (uri: string) => {
       <SafeAreaView edges={['top']} style={[styles.header, { backgroundColor: colors.headerBg, borderBottomColor: colors.border }]}>
         <View style={styles.topRow}>
           <View style={{ width: 24 }} />
-          <TouchableOpacity onPress={handleLogout}>
+          <TouchableOpacity onPress={handleLogout} disabled={isLoggingOut}>
             <Feather name="log-out" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>

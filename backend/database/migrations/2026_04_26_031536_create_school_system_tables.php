@@ -130,6 +130,9 @@
                 $table->foreignId('school_year_id')->constrained()->cascadeOnDelete();
                 $table->date('date_enrolled')->nullable();
                 $table->enum('status', ['Active', 'Completed', 'Dropped'])->default('Active');
+
+$table->unique(['student_id', 'section_id', 'school_year_id']);
+            
                 $table->timestamps();
             });
 
@@ -178,16 +181,20 @@
                 $table->timestamps();
             });
 
-            Schema::create('attendance', function (Blueprint $table) {
-                $table->id();
-                $table->foreignId('enrollment_id')->constrained()->cascadeOnDelete();
-                $table->date('date')->index();
-                $table->time('time_in')->nullable();    
-                $table->time('time_out')->nullable();
-                $table->enum('status', ['Present', 'Late', 'Absent']);
-                $table->text('remarks')->nullable();
-                $table->timestamps();
-            });
+          Schema::create('attendance', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('enrollment_id')->constrained()->cascadeOnDelete();
+    $table->foreignId('teacher_id')->constrained('teachers')->cascadeOnDelete(); // <-- IDAGDAG ITO
+    $table->date('date')->index();
+    $table->time('time_in')->nullable();    
+    $table->time('time_out')->nullable();
+    $table->enum('status', ['Present', 'Late', 'Absent']);
+    $table->text('remarks')->nullable();
+    $table->timestamps();
+
+    // Optional: unique constraint para iwas duplicate per teacher per student per day
+    $table->unique(['enrollment_id', 'teacher_id', 'date'], 'attendance_unique_record');
+});
 
             /*
             |--------------------------------------------------------------------------
@@ -201,6 +208,7 @@
                 $table->foreignId('quarter_id')->constrained('quarters')->cascadeOnDelete();
             
             $table->unique(['enrollment_id', 'subject_id', 'quarter_id']);
+            
                 //DepEd grading system
                 $table->decimal('written_works', 5, 2)->default(0);
                 $table->decimal('performance_tasks', 5, 2)->default(0);

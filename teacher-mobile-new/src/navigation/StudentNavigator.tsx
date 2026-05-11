@@ -1,33 +1,37 @@
 import React from 'react';
-import { Platform, StyleSheet, View, TouchableOpacity } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 
-import LoginScreen from '../screens/LoginScreen';
-import DashboardScreen from '../screens/DashboardScreen';
-import AttendanceScreen from '../screens/AttendanceScreen';
-import ActivitiesScreen from '../screens/ActivitiesScreen';
-import MeetingsScreen from '../screens/MeetingsScreen'; 
-import ProfileScreen from '../screens/ProfileScreen';
+import StudentDashboardScreen from '../screens/Student/StudentDashboardScreen';
+import StudentGradesScreen from '../screens/Student/StudentGradesScreen';
+import StudentAttendanceScreen from '../screens/Student/StudentAttendanceScreen';
+import StudentActivitiesScreen from '../screens/Student/StudentActivitiesScreen';
+import StudentProfileScreen from '../screens/Student/StudentProfileScreen';
+import StudentAnnouncementsScreen from '../screens/Student/StudentAnnouncementsScreen';
 
-export type RootStackParamList = {
-  Login: undefined;
+export type StudentRootStackParamList = {
   Dashboard: undefined;
 };
 
-export type TabParamList = {
+export type StudentTabParamList = {
   Dashboard: undefined;
+  Grades: undefined;
   Attendance: undefined;
   Activities: undefined;
-  Meetings: undefined;
+  Announcements: undefined;
   Profile: undefined;
 };
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
-const Tab = createBottomTabNavigator<TabParamList>();
+const Stack = createNativeStackNavigator<StudentRootStackParamList>();
+const Tab = createBottomTabNavigator<StudentTabParamList>();
 
-function TeacherTabs() {
+interface StudentNavigatorProps {
+  onLogout?: () => void;
+}
+
+function StudentTabs({ onLogout }: { onLogout?: () => void }) {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -43,9 +47,12 @@ function TeacherTabs() {
           } else if (route.name === 'Activities') {
             IconComponent = MaterialCommunityIcons;
             iconName = 'comment-text-outline';
-           } else if (route.name === 'Meetings') {
-            IconComponent = Ionicons;
-            iconName = focused ? 'calendar' : 'calendar-outline';
+          } else if (route.name === 'Grades') {
+            IconComponent = Feather;
+            iconName = 'book-open';
+          } else if (route.name === 'Announcements') {
+            IconComponent = Feather;
+            iconName = 'bell';
           } else if (route.name === 'Profile') {
             IconComponent = Feather;
             iconName = 'user';
@@ -64,21 +71,25 @@ function TeacherTabs() {
         tabBarShowLabel: false,
       })}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} />
-      <Tab.Screen name="Attendance" component={AttendanceScreen} />
-      <Tab.Screen name="Activities" component={ActivitiesScreen} />
-      <Tab.Screen name="Meetings" component={MeetingsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
-      
+      <Tab.Screen name="Dashboard" component={StudentDashboardScreen} />
+      <Tab.Screen name="Attendance" component={StudentAttendanceScreen} />
+      <Tab.Screen name="Activities" component={StudentActivitiesScreen} />
+      <Tab.Screen name="Grades" component={StudentGradesScreen} />
+      <Tab.Screen name="Announcements" component={StudentAnnouncementsScreen} />
+      <Tab.Screen 
+        name="Profile" 
+        component={() => <StudentProfileScreen onLogout={onLogout} />} 
+      />
     </Tab.Navigator>
   );
 }
 
-export default function AppNavigator() {
+export default function StudentNavigator({ onLogout }: StudentNavigatorProps) {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Dashboard" component={TeacherTabs} />
+      <Stack.Screen name="Dashboard">
+        {() => <StudentTabs onLogout={onLogout} />}
+      </Stack.Screen>
     </Stack.Navigator>
   );
 }
@@ -91,7 +102,7 @@ const styles = StyleSheet.create({
     right: 20,
     height: 85,
     borderRadius: 40,
-    backgroundColor: '#FDFBF7', // Matches the warm cream in image_189ae4.jpg
+    backgroundColor: '#FDFBF7',
     borderTopWidth: 0,
     shadowColor: '#D1C7B7',
     shadowOffset: { width: 0, height: 10 },
@@ -108,13 +119,12 @@ const styles = StyleSheet.create({
     borderRadius: 22.5,
   },
   activeWrapper: {
-    backgroundColor: '#C4B196', // Soft gold/taupe circle for active tab
-    // Add a slight lift effect
+    backgroundColor: '#C4B196',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 5,
     elevation: 4,
-    marginTop: -5, // Slight "pop up" effect seen in the design
+    marginTop: -5,
   },
 });

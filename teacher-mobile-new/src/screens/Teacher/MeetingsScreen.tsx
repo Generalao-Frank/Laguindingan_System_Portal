@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, ScrollView, RefreshControl, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import apiClient from '../api/client';
+import apiClient from '../../api/client';
 
 interface Meeting { id: number; title: string; description: string; location: string; datetime: string; status: string; created_by: string; }
 

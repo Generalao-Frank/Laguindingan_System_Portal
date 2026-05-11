@@ -9,11 +9,10 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-  public function up()
+   public function up()
 {
-    Schema::table('attendance', function (Blueprint $table) {
-        $table->foreignId('teacher_id')->constrained('teachers')->cascadeOnDelete();
-        $table->unique(['enrollment_id', 'teacher_id', 'date'], 'attendance_unique_record');
+    Schema::table('users', function (Blueprint $table) {
+        $table->string('expo_push_token')->nullable()->after('remember_token');
     });
 }
 
@@ -22,7 +21,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('attendance', function (Blueprint $table) {
+        Schema::table('users', function (Blueprint $table) {
             //
         });
     }

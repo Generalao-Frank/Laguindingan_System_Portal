@@ -4,16 +4,24 @@ import {
   RefreshControl, Image, Dimensions, ActivityIndicator, Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { Svg, Rect } from 'react-native-svg';
-import apiClient from '../api/client';
-import { useFocusEffect } from '@react-navigation/native';
-import schoolLogo from '../../assets/les_logo.png';
+import apiClient from '../../api/client';
+import schoolLogo from '../../../assets/les_logo.png';
 
 const { width } = Dimensions.get('window');
 
-// --- Types (unchanged) ---
+// Define navigation param list for TypeScript
+type RootStackParamList = {
+  Activities: undefined;
+  Meetings: undefined;
+};
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+// --- Types ---
 interface Profile {
   first_name: string;
   last_name: string;
@@ -53,7 +61,7 @@ interface AttendanceStudent {
 }
 
 export default function DashboardScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp>();
   const colors = {
     background: '#F9F7F2',
     cardBg: '#FFFFFF',
@@ -78,7 +86,7 @@ export default function DashboardScreen() {
   const getFullImageUrl = (url?: string) => {
     if (!url) return undefined;
     if (url.startsWith('http')) return url;
-    return `http://192.168.1.64:8000${url}`;
+    return `http://10.0.0.79:8000${url}`;
   };
 
   const fetchData = useCallback(async () => {
@@ -257,7 +265,7 @@ export default function DashboardScreen() {
           <Text style={styles.searchPillText}>Search sections or activities</Text>
         </TouchableOpacity>
 
-        {/* Featured Cards - Now tappable */}
+        {/* Featured Cards - Now tappable with proper typing */}
         <View style={styles.cardsRow}>
           <TouchableOpacity
             style={[styles.luxuryCard, { backgroundColor: colors.cardBg }]}
@@ -330,7 +338,6 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  // ... (all previous styles remain exactly the same as in the original code)
   container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   transparentHeader: { paddingHorizontal: 25, paddingTop: 10 },

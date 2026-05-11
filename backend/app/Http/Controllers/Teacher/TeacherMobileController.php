@@ -358,4 +358,29 @@ public function attendanceHistory($enrollment_id)
     return response()->json($records);
 }
 
+public function storeExpoToken(Request $request)
+{
+    $user = Auth::user();
+    
+    if (!$user) {
+        return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+    }
+    
+    $request->validate([
+        'expo_token' => 'required|string'
+    ]);
+    
+    // Manually find the user to ensure we have a model instance
+    $user = User::find($user->id);
+    
+    if (!$user) {
+        return response()->json(['success' => false, 'message' => 'User not found'], 404);
+    }
+    
+    $user->expo_push_token = $request->expo_token;
+    $user->save();
+    
+    return response()->json(['success' => true]);
+}
+
 }

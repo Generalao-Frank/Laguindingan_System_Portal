@@ -19,7 +19,8 @@ import TeacherAssignments from './pages/TeacherAssignments';
 import SchoolYears from './pages/SchoolYears';
 import Quarters from './pages/Quarters';
 import SetActiveTerm from './pages/SetActiveTerm';
-import GradeEncoding from './pages/GradeEncoding';
+// import GradeEncoding from './pages/GradeEncoding';
+import GradeApprovals from './pages/GradeApprovals';
 import ViewGrades from './pages/ViewGrades';
 import GradeReports from './pages/GradeReports';
 import GenerateQR from './pages/GenerateQR';
@@ -122,7 +123,8 @@ function App() {
                         <Route path="/admin/school-years/:schoolYearId/quarters" element={<Quarters />} />
                         <Route path="/admin/quarters" element={<Quarters />} />  
                         <Route path="/admin/active-term" element={<SetActiveTerm />} />
-                        <Route path="/admin/grades/encode" element={<GradeEncoding />} />
+                        {/* <Route path="/admin/grades/encode" element={<GradeEncoding />} /> */}
+                        <Route path="admin/grade-approvals" element={<GradeApprovals />} />
                         <Route path="/admin/grades" element={<ViewGrades />} />
                         <Route path="/admin/grades/reports" element={<GradeReports />} />
                         <Route path="/admin/qr/generate" element={<GenerateQR />} />

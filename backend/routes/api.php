@@ -20,7 +20,17 @@ use App\Http\Controllers\Admin\MeetingController;
 use App\Http\Controllers\Admin\ActivityController;
 
 
+
 use App\Http\Controllers\Teacher\TeacherMobileController;
+use App\Http\Controllers\Teacher\TeacherGradeController ;
+use App\Http\Controllers\Teacher\ActivityController as TeacherActivityController;
+
+use App\Http\Controllers\Student\DashboardController as StudentDashboardController;
+use App\Http\Controllers\Student\GradeController as StudentGradeController;
+use App\Http\Controllers\Student\AttendanceController as StudentAttendanceController;
+use App\Http\Controllers\Student\ActivityController as StudentActivityController;
+use App\Http\Controllers\Student\ProfileController as StudentProfileController;
+use App\Http\Controllers\Student\AnnouncementController as StudentAnnouncementController;
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\SchoolYearController;
@@ -126,6 +136,10 @@ Route::delete('/quarters/{id}', [QuarterController::class, 'destroy']);
 // Grades
 Route::get('/grades', [GradeController::class, 'index']);
 Route::post('/grades/batch', [GradeController::class, 'batchStore']);
+Route::get('/grades/pending', [GradeController::class, 'pendingGrades']);
+Route::get('/grades/stats', [GradeController::class, 'stats']);
+Route::post('/grades/{id}/approve', [GradeController::class, 'approveGrade']);
+Route::post('/grades/{id}/reject', [GradeController::class, 'rejectGrade']);
 
 // QR Code Management
 Route::get('/qr/stats', [QRCodeController::class, 'stats']);
@@ -177,6 +191,9 @@ Route::delete('/enrollments/{id}', [EnrollmentController::class, 'destroy']);
   Route::middleware(['auth:sanctum'])->group(function () {
     // Teacher mobile routes
     Route::prefix('teacher')->group(function () {
+
+    Route::post('/expo-token', [TeacherMobileController::class, 'storeExpoToken']);
+
         Route::get('/dashboard', [TeacherMobileController::class, 'dashboard']);
         Route::get('/attendance', [TeacherMobileController::class, 'getAttendanceList']);
         Route::post('/attendance/mark', [TeacherMobileController::class, 'markAttendance']);
@@ -191,6 +208,37 @@ Route::delete('/enrollments/{id}', [EnrollmentController::class, 'destroy']);
         Route::post('/attendance/bulk-timeout', [TeacherMobileController::class, 'bulkTimeOut']);
         Route::post('/activities', [TeacherMobileController::class, 'storeActivity']);
         Route::get('/attendance/history/{enrollment_id}', [TeacherMobileController::class, 'attendanceHistory']);
+
+
+        //grade
+       Route::get('/grades/subjects', [TeacherGradeController::class, 'getSubjectsForGrading']);
+    Route::get('/grades/students', [TeacherGradeController::class, 'getStudentsForGrading']);
+    Route::post('/grades/save', [TeacherGradeController::class, 'saveGrade']);
+    Route::post('/grades/submit', [TeacherGradeController::class, 'submitGrades']);
+    Route::get('/grades/status', [TeacherGradeController::class, 'getSubmissionStatus']);
+
+    
+     Route::get('/activities/{id}/submissions', [TeacherActivityController::class, 'getSubmissions']);
+    Route::post('/submissions/{id}/grade', [TeacherActivityController::class, 'gradeSubmission']);
     });
+
+    // Student Routes (need authentication)
+Route::middleware(['auth:sanctum', 'role:Student'])->prefix('student')->group(function () {
+    Route::get('/dashboard', [StudentDashboardController::class, 'index']);
+    Route::get('/grades', [StudentGradeController::class, 'index']);
+    Route::get('/attendance', [\App\Http\Controllers\Student\AttendanceController::class, 'index']);
+    Route::get('/activities', [StudentActivityController::class, 'index']);
+    Route::get('/activities/{id}', [StudentActivityController::class, 'show']);
+    Route::post('/activities/{id}/submit', [StudentActivityController::class, 'submit']);
+    Route::get('/announcements', [StudentAnnouncementController::class, 'index']);
+
+     Route::post('/activities/{id}/update-submission', [StudentActivityController::class, 'updateSubmission']);
+
+   Route::get('/profile', [StudentProfileController::class, 'index']);
+Route::put('/profile', [StudentProfileController::class, 'update']);
+Route::post('/upload-profile', [StudentProfileController::class, 'uploadProfilePicture']);
+Route::post('/update-profile-picture', [StudentProfileController::class, 'updateProfilePicture']);
+Route::post('/change-password', [StudentProfileController::class, 'changePassword']);
+});
 
 });

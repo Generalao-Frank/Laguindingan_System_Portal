@@ -4,7 +4,7 @@ import {
   LayoutGrid, UserPlus, Users, LogOut, ShieldCheck, UserCheck, Settings, PieChart,
   Briefcase, Calendar, Award, TrendingUp, Activity, GraduationCap, BookOpen,
   ChevronDown, ChevronLeft, ChevronRight, School, Clock, FileText, QrCode,
-  Video, MessageSquare, Database, Download, AlertCircle, Camera, X, Upload
+  Video, MessageSquare, Database, Download, CheckCircle, AlertCircle, Camera, X, Upload
 } from 'lucide-react';
 import axios from 'axios';
 import lesLogo from '../assets/les_logo.png';
@@ -217,7 +217,8 @@ const Sidebar = ({ onLogout, children }) => {
     { 
       name: 'Grading System', icon: <FileText size={18} />, submenu: true,
       children: [
-        { name: 'Grade Encoding', path: '/admin/grades/encode', icon: <FileText size={16} /> },
+        // { name: 'Grade Encoding', path: '/admin/grades/encode', icon: <FileText size={16} /> },
+        { name: 'Grade Approvals', path: '/admin/grade-approvals', icon: <CheckCircle size={16} /> },
         { name: 'View All Grades', path: '/admin/grades', icon: <Database size={16} /> },
         { name: 'Grade Reports', path: '/admin/grades/reports', icon: <Download size={16} /> },
       ]

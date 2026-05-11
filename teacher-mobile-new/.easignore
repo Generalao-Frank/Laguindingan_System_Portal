@@ -1,0 +1,13 @@
+cd C:\Users\Acer\Desktop\Laguindingan_Project\teacher-mobile-new
+@"
+# Exclude parent backend and web folders
+../backend/
+../web/
+
+# Exclude node_modules
+node_modules/
+
+# Exclude any symlinks
+*storage*
+*public/storage*
+"@ | Out-File -FilePath .easignore -Encoding utf8

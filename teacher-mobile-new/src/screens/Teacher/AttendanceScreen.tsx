@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import apiClient from '../api/client';
+import apiClient from '../../api/client';
 
 const { width } = Dimensions.get('window');
 

@@ -5,6 +5,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Activity extends Model
 {
+
+protected $table = 'activities';
     protected $fillable = [
         'teacher_id', 'section_id', 'subject_id', 'title',
         'description', 'deadline', 'max_points'
@@ -31,6 +33,6 @@ class Activity extends Model
 
     public function submissions()
     {
-        return $this->hasMany(Submission::class);
+        return $this->hasMany(Submission::class, 'activity_id');
     }
 }
