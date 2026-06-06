@@ -451,4 +451,137 @@ class EnrollmentController extends Controller
         if ($gradeLevel === 0) return 'Kinder';
         return 'Grade ' . $gradeLevel;
     }
+
+    /**
+ * Get enrollment report data
+ */
+public function enrollmentReport(Request $request)
+{
+    try {
+        $query = Enrollment::with(['student.user', 'section.gradeLevel', 'schoolYear']);
+        
+        // Filter by school year
+        if ($request->school_year_id) {
+            $query->where('school_year_id', $request->school_year_id);
+        }
+        
+        // Filter by date range
+        if ($request->start_date && $request->end_date) {
+            $query->whereBetween('created_at', [$request->start_date, $request->end_date]);
+        }
+        
+        $enrollments = $query->get();
+        
+        // Summary statistics
+        $summary = [
+            'totalEnrollments' => $enrollments->count(),
+            'activeEnrollments' => $enrollments->where('status', 'Active')->count(),
+            'completedEnrollments' => $enrollments->where('status', 'Completed')->count(),
+            'droppedEnrollments' => $enrollments->where('status', 'Dropped')->count(),
+            'enrollmentRate' => $enrollments->count() > 0 
+                ? round(($enrollments->where('status', 'Active')->count() / $enrollments->count()) * 100, 1)
+                : 0
+        ];
+        
+        // Enrollment trend by school year
+        $enrollmentTrend = Enrollment::select(
+                DB::raw('CONCAT(school_years.year_start, "-", school_years.year_end) as year'),
+                DB::raw('count(*) as enrolled')
+            )
+            ->join('school_years', 'enrollments.school_year_id', '=', 'school_years.id')
+            ->groupBy('enrollments.school_year_id', 'school_years.year_start', 'school_years.year_end')
+            ->orderBy('school_years.year_start', 'asc')
+            ->get()
+            ->toArray();
+        
+        // Grade level distribution
+        $gradeLevelDistribution = Enrollment::join('sections', 'enrollments.section_id', '=', 'sections.id')
+            ->join('grade_levels', 'sections.grade_level_id', '=', 'grade_levels.id')
+            ->select('grade_levels.grade_level', DB::raw('count(*) as count'))
+            ->groupBy('grade_levels.grade_level')
+            ->orderBy('grade_levels.grade_level', 'asc')
+            ->get()
+            ->map(function($item) {
+                return [
+                    'grade' => $item->grade_level == 0 ? 'Kinder' : 'Grade ' . $item->grade_level,
+                    'count' => $item->count,
+                    'color' => $this->getGradeColor($item->grade_level)
+                ];
+            });
+        
+        // Monthly enrollments for current year
+        $monthlyEnrollments = Enrollment::whereYear('created_at', now()->year)
+            ->select(DB::raw('MONTH(created_at) as month'), DB::raw('count(*) as enrolled'))
+            ->groupBy(DB::raw('MONTH(created_at)'))
+            ->orderBy(DB::raw('MONTH(created_at)'), 'asc')
+            ->get()
+            ->map(function($item) {
+                $months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return [
+                    'month' => $months[$item->month - 1],
+                    'enrolled' => $item->enrolled
+                ];
+            });
+        
+        // Section distribution (top 5)
+        $sectionDistribution = Enrollment::join('sections', 'enrollments.section_id', '=', 'sections.id')
+            ->select('sections.section_name as section', DB::raw('count(*) as count'))
+            ->groupBy('sections.id', 'sections.section_name')
+            ->orderBy('count', 'desc')
+            ->limit(5)
+            ->get()
+            ->toArray();
+        
+        // Recent enrollments
+        $recentEnrollments = Enrollment::with(['student.user', 'section.gradeLevel'])
+            ->orderBy('created_at', 'desc')
+            ->limit(10)
+            ->get()
+            ->map(function($enrollment) {
+                $user = $enrollment->student->user;
+                $gradeLevel = $enrollment->section->gradeLevel->grade_level;
+                return [
+                    'id' => $enrollment->id,
+                    'name' => $user->last_name . ', ' . $user->first_name,
+                    'lrn' => $enrollment->student->lrn,
+                    'grade' => $gradeLevel == 0 ? 'Kinder' : 'Grade ' . $gradeLevel,
+                    'section' => $enrollment->section->section_name,
+                    'date' => $enrollment->created_at->format('Y-m-d')
+                ];
+            });
+        
+        return response()->json([
+            'success' => true,
+            'report' => [
+                'summary' => $summary,
+                'enrollmentTrend' => $enrollmentTrend,
+                'gradeLevelDistribution' => $gradeLevelDistribution,
+                'sectionDistribution' => $sectionDistribution,
+                'monthlyEnrollments' => $monthlyEnrollments,
+                'recentEnrollments' => $recentEnrollments
+            ]
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('Enrollment report error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to load enrollment report'
+        ], 500);
+    }
+}
+
+private function getGradeColor($grade)
+{
+    $colors = [
+        0 => '#10B981',  // Kinder - Emerald
+        1 => '#3B82F6',  // Grade 1 - Blue
+        2 => '#6366F1',  // Grade 2 - Indigo
+        3 => '#8B5CF6',  // Grade 3 - Purple
+        4 => '#EC4899',  // Grade 4 - Pink
+        5 => '#F59E0B',  // Grade 5 - Amber
+        6 => '#EF4444'   // Grade 6 - Red
+    ];
+    return $colors[$grade] ?? '#6B7280';
+}
 }   

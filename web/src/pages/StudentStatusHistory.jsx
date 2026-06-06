@@ -55,7 +55,9 @@ const StudentStatusHistory = () => {
       const response = await axios.get(`${API_URL}/admin/students`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (response.data.success) setStudents(response.data.students);
+      if (response.data.success) {
+        setStudents(response.data.students);
+      }
     } catch (error) {
       console.error('Error fetching students:', error);
       setStudents([]);
@@ -69,7 +71,9 @@ const StudentStatusHistory = () => {
       const response = await axios.get(`${API_URL}/admin/school-years`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (response.data.success) setSchoolYears(response.data.school_years);
+      if (response.data.success) {
+        setSchoolYears(response.data.school_years);
+      }
     } catch (error) {
       console.error('Error fetching school years:', error);
       setSchoolYears([]);
@@ -121,18 +125,21 @@ const StudentStatusHistory = () => {
           remarks: item.remarks,
           changed_by: item.changed_by_name || 'System'
         })));
-      } else {
+      } else if (studentRes.data.student) {
         const currentGrade = studentRes.data.student?.current_enrollment?.grade_level;
         const currentSection = studentRes.data.student?.current_enrollment?.section;
+        const currentSchoolYear = studentRes.data.student?.current_enrollment?.school_year || 
+          (new Date().getFullYear() + '-' + (new Date().getFullYear() + 1));
+        
         setStatusHistory([{
           id: 1,
           status: 'Enrolled',
-          school_year: new Date().getFullYear() + '-' + (new Date().getFullYear() + 1),
+          school_year: currentSchoolYear,
           grade_level: currentGrade,
           grade_display: getGradeDisplay(currentGrade),
           section: currentSection || 'N/A',
           effective_date: new Date().toISOString().split('T')[0],
-          remarks: 'Current enrollment',
+          remarks: 'Currently enrolled (No history records found)',
           changed_by: 'System'
         }]);
       }
@@ -148,7 +155,7 @@ const StudentStatusHistory = () => {
           grade_display: getGradeDisplay(selectedStudent.grade_level),
           section: selectedStudent.section || 'N/A',
           effective_date: new Date().toISOString().split('T')[0],
-          remarks: 'Current enrollment',
+          remarks: 'Current enrollment (Unable to load history)',
           changed_by: 'System'
         }]);
         setViewMode('detail');
@@ -158,7 +165,22 @@ const StudentStatusHistory = () => {
     }
   };
 
-  // Fixed: convert LRN to string
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return dateString;
+      return date.toLocaleDateString('en-PH', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (error) {
+      return dateString;
+    }
+  };
+
+  // FIXED: Filter students based on status and school year
   const filteredStudents = students.filter(student => {
     const lrnStr = student.lrn ? String(student.lrn) : '';
     const fullName = student.full_name || `${student.last_name}, ${student.first_name} ${student.middle_name || ''}`;
@@ -169,8 +191,29 @@ const StudentStatusHistory = () => {
       firstNameLastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       fullName.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesStatus = filterStatus === 'all' || student.status === filterStatus;
-    const matchesSchoolYear = filterSchoolYear === 'all' || (student.school_year_id && student.school_year_id === parseInt(filterSchoolYear));
+    // FIX: Status filtering - handle both 'Active' status and other status types
+    let matchesStatus = true;
+    if (filterStatus !== 'all') {
+      // Get the label from statusConfig for comparison
+      const statusLabel = statusConfig[filterStatus]?.label;
+      // Compare student.status with the filter value or its label
+      if (statusLabel) {
+        matchesStatus = student.status === filterStatus || student.status === statusLabel;
+      } else {
+        matchesStatus = student.status === filterStatus;
+      }
+    }
+    
+    // FIX: School Year filtering - check if student's enrollment school year matches
+    let matchesSchoolYear = true;
+    if (filterSchoolYear !== 'all') {
+      const selectedYear = schoolYears.find(sy => sy.id === parseInt(filterSchoolYear));
+      if (selectedYear) {
+        const selectedYearString = `${selectedYear.year_start}-${selectedYear.year_end}`;
+        matchesSchoolYear = student.school_year === selectedYearString || 
+                           student.current_enrollment?.school_year === selectedYearString;
+      }
+    }
     
     return matchesSearch && matchesStatus && matchesSchoolYear;
   });
@@ -178,6 +221,10 @@ const StudentStatusHistory = () => {
   const getGradeDisplay = (grade) => {
     if (grade === undefined || grade === null) return 'N/A';
     return grade === 0 ? 'Kinder' : `Grade ${grade}`;
+  };
+
+  const getInitials = (firstName, lastName) => {
+    return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase();
   };
 
   const StatCard = ({ title, value, icon: Icon, color }) => (
@@ -241,15 +288,33 @@ const StudentStatusHistory = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="relative">
                   <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input type="text" placeholder="Search by name or LRN..." className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                  <input 
+                    type="text" 
+                    placeholder="Search by name or LRN..." 
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm" 
+                    value={searchTerm} 
+                    onChange={(e) => setSearchTerm(e.target.value)} 
+                  />
                 </div>
-                <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+                <select 
+                  value={filterStatus} 
+                  onChange={(e) => setFilterStatus(e.target.value)} 
+                  className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm"
+                >
                   <option value="all">All Status</option>
-                  {Object.entries(statusConfig).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
+                  {Object.entries(statusConfig).map(([key, config]) => (
+                    <option key={key} value={key}>{config.label}</option>
+                  ))}
                 </select>
-                <select value={filterSchoolYear} onChange={(e) => setFilterSchoolYear(e.target.value)} className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+                <select 
+                  value={filterSchoolYear} 
+                  onChange={(e) => setFilterSchoolYear(e.target.value)} 
+                  className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm"
+                >
                   <option value="all">All School Years</option>
-                  {schoolYears.map(sy => <option key={sy.id} value={sy.id}>{sy.year_start}-{sy.year_end}</option>)}
+                  {schoolYears.map(sy => (
+                    <option key={sy.id} value={sy.id}>{sy.year_start}-{sy.year_end}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -280,8 +345,12 @@ const StudentStatusHistory = () => {
                         <tr key={student.id} className="hover:bg-gray-50/50 transition-colors">
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-semibold text-sm">
-                                {student.first_name?.charAt(0) || student.full_name?.charAt(0) || 'S'}
+                              <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-semibold text-sm overflow-hidden">
+                                {student.profile_picture ? (
+                                  <img src={student.profile_picture} alt="Profile" className="w-full h-full object-cover rounded-lg" />
+                                ) : (
+                                  getInitials(student.first_name, student.last_name)
+                                )}
                               </div>
                               <div>
                                 <p className="font-medium text-gray-800 text-sm">{student.full_name || `${student.last_name}, ${student.first_name}`}</p>
@@ -302,7 +371,10 @@ const StudentStatusHistory = () => {
                             </span>
                           </td>
                           <td className="px-5 py-3 text-center">
-                            <button onClick={() => fetchStudentHistory(student.id)} className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                            <button 
+                              onClick={() => fetchStudentHistory(student.id)} 
+                              className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                            >
                               <Eye size={12} /> View History
                             </button>
                           </td>
@@ -311,7 +383,20 @@ const StudentStatusHistory = () => {
                     }) : (
                       <tr>
                         <td colSpan="5" className="px-5 py-12 text-center">
-                          <div className="flex flex-col items-center"><Users size={32} className="text-gray-300 mb-2" /><p className="text-gray-400 text-sm">No student records found</p></div>
+                          <div className="flex flex-col items-center">
+                            <Users size={32} className="text-gray-300 mb-2" />
+                            <p className="text-gray-400 text-sm">No student records found</p>
+                            <button 
+                              onClick={() => {
+                                setFilterStatus('all');
+                                setFilterSchoolYear('all');
+                                setSearchTerm('');
+                              }}
+                              className="mt-3 text-xs text-indigo-600 hover:text-indigo-700"
+                            >
+                              Clear all filters
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -327,8 +412,14 @@ const StudentStatusHistory = () => {
             <div className="bg-white border border-gray-100 rounded-xl overflow-hidden mb-5">
               <div className="px-5 py-4 bg-gray-50/30 border-b border-gray-100">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
-                    <span className="text-lg font-bold text-indigo-600 uppercase">{selectedStudent?.first_name?.charAt(0) || selectedStudent?.full_name?.charAt(0) || 'S'}</span>
+                  <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center overflow-hidden">
+                    {selectedStudent?.profile_picture ? (
+                      <img src={selectedStudent.profile_picture} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-lg font-bold text-indigo-600 uppercase">
+                        {getInitials(selectedStudent?.first_name, selectedStudent?.last_name)}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <h2 className="text-lg font-semibold text-gray-800">{selectedStudent?.full_name || `${selectedStudent?.last_name}, ${selectedStudent?.first_name}`}</h2>
@@ -362,15 +453,26 @@ const StudentStatusHistory = () => {
                                   </span>
                                   {isLatest && <span className="text-[9px] font-medium text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">Current</span>}
                                 </div>
-                                <div className="flex items-center gap-2 text-[10px] text-gray-500"><Calendar size={11} /> {item.effective_date}</div>
+                                <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                                  <Calendar size={11} /> {formatDate(item.effective_date)}
+                                </div>
                               </div>
                               <div className="grid grid-cols-3 gap-3 mt-2 pt-2 border-t border-gray-100">
                                 <div><p className="text-[9px] text-gray-400 uppercase">School Year</p><p className="text-xs font-medium text-gray-700">{item.school_year}</p></div>
                                 <div><p className="text-[9px] text-gray-400 uppercase">Grade</p><p className="text-xs font-medium text-gray-700">{item.grade_display || getGradeDisplay(item.grade_level)}</p></div>
                                 <div><p className="text-[9px] text-gray-400 uppercase">Section</p><p className="text-xs font-medium text-gray-700">{item.section || 'N/A'}</p></div>
                               </div>
-                              {item.remarks && (<div className="mt-2 pt-1"><p className="text-[9px] text-gray-400 uppercase">Remarks</p><p className="text-xs text-gray-500 italic">"{item.remarks}"</p></div>)}
-                              {item.changed_by && (<div className="mt-2 pt-1 text-right"><p className="text-[8px] text-gray-400">Updated by: {item.changed_by}</p></div>)}
+                              {item.remarks && (
+                                <div className="mt-2 pt-1">
+                                  <p className="text-[9px] text-gray-400 uppercase">Remarks</p>
+                                  <p className="text-xs text-gray-500 italic">"{item.remarks}"</p>
+                                </div>
+                              )}
+                              {item.changed_by && (
+                                <div className="mt-2 pt-1 text-right">
+                                  <p className="text-[8px] text-gray-400">Updated by: {item.changed_by}</p>
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -378,7 +480,10 @@ const StudentStatusHistory = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-8"><History size={32} className="text-gray-300 mx-auto mb-2" /><p className="text-gray-500 text-sm">No status history found for this student</p></div>
+                  <div className="text-center py-8">
+                    <History size={32} className="text-gray-300 mx-auto mb-2" />
+                    <p className="text-gray-500 text-sm">No status history found for this student</p>
+                  </div>
                 )}
               </div>
             </div>
@@ -386,10 +491,22 @@ const StudentStatusHistory = () => {
             {/* Summary Cards */}
             {statusHistory.length > 0 && (
               <div className="grid grid-cols-4 gap-3 mt-5">
-                <div className="bg-green-50 rounded-lg p-3 text-center"><p className="text-[10px] text-green-600 font-medium">Enrollments</p><p className="text-lg font-bold text-green-700">{statusHistory.filter(h => h.status === 'Enrolled').length}</p></div>
-                <div className="bg-indigo-50 rounded-lg p-3 text-center"><p className="text-[10px] text-indigo-600 font-medium">Promotions</p><p className="text-lg font-bold text-indigo-700">{statusHistory.filter(h => h.status === 'Promoted').length}</p></div>
-                <div className="bg-purple-50 rounded-lg p-3 text-center"><p className="text-[10px] text-purple-600 font-medium">Levels</p><p className="text-lg font-bold text-purple-700">{[...new Set(statusHistory.map(h => h.grade_level))].filter(g => g != null).length}</p></div>
-                <div className="bg-blue-50 rounded-lg p-3 text-center"><p className="text-[10px] text-blue-600 font-medium">School Years</p><p className="text-lg font-bold text-blue-700">{[...new Set(statusHistory.map(h => h.school_year))].filter(sy => sy).length}</p></div>
+                <div className="bg-green-50 rounded-lg p-3 text-center">
+                  <p className="text-[10px] text-green-600 font-medium">Enrollments</p>
+                  <p className="text-lg font-bold text-green-700">{statusHistory.filter(h => h.status === 'Enrolled' || h.status === 'Active').length}</p>
+                </div>
+                <div className="bg-indigo-50 rounded-lg p-3 text-center">
+                  <p className="text-[10px] text-indigo-600 font-medium">Promotions</p>
+                  <p className="text-lg font-bold text-indigo-700">{statusHistory.filter(h => h.status === 'Promoted' || h.status === 'Completed').length}</p>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-3 text-center">
+                  <p className="text-[10px] text-purple-600 font-medium">Levels</p>
+                  <p className="text-lg font-bold text-purple-700">{[...new Set(statusHistory.map(h => h.grade_level))].filter(g => g !== null && g !== undefined).length}</p>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-3 text-center">
+                  <p className="text-[10px] text-blue-600 font-medium">School Years</p>
+                  <p className="text-lg font-bold text-blue-700">{[...new Set(statusHistory.map(h => h.school_year))].filter(sy => sy && sy !== 'N/A').length}</p>
+                </div>
               </div>
             )}
           </div>

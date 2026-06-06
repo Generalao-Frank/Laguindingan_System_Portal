@@ -5,7 +5,8 @@ import {
   Calendar, CheckCircle, AlertCircle, Search, 
   RefreshCw, ArrowLeft, Lock, Unlock, Eye, 
   ChevronRight, Clock, Award, Zap, TrendingUp,
-  Play, Pause, FileText, Users, BookOpen
+  Play, Pause, FileText, Users, BookOpen,
+  Rocket
 } from 'lucide-react';
 import axios from 'axios';
 import API_URL from '../config';
@@ -24,6 +25,7 @@ const Quarters = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [error, setError] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [isAutoUpdating, setIsAutoUpdating] = useState(false);
   const [stats, setStats] = useState({
     totalQuarters: 0,
     activeQuarter: null,
@@ -40,7 +42,6 @@ const Quarters = () => {
     school_year_id: schoolYearId || '',
   });
 
-
   const token = localStorage.getItem('userToken');
 
   useEffect(() => {
@@ -52,6 +53,12 @@ const Quarters = () => {
       fetchAllQuarters();
     }
   }, [schoolYearId]);
+
+  // Auto-update quarters when component mounts (optional)
+  useEffect(() => {
+    // Uncomment if you want auto-update on page load
+    // handleAutoUpdate();
+  }, []);
 
   const fetchSchoolYearDetails = async () => {
     try {
@@ -177,6 +184,55 @@ const Quarters = () => {
     }
     
     return true;
+  };
+
+  // ✅ AUTO-UPDATE FUNCTION - IDINAGDAG ITO
+  const handleAutoUpdate = async () => {
+    if (!window.confirm(
+      "Auto-update quarters based on current date?\n\n" +
+      "This will automatically:\n" +
+      "✓ Activate quarter that matches today's date\n" +
+      "✓ Deactivate quarters that are outside date range\n\n" +
+      "Do you want to continue?"
+    )) {
+      return;
+    }
+    
+    setIsAutoUpdating(true);
+    try {
+      const response = await axios.post(`${API_URL}/admin/quarters/auto-update`, {}, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.data.success) {
+        // Show summary of changes
+        const activatedCount = response.data.activated_count || 0;
+        const deactivatedCount = response.data.deactivated_count || 0;
+        
+        let message = 'Quarter statuses updated successfully!\n\n';
+        if (activatedCount > 0) message += `✓ Activated: ${activatedCount} quarter(s)\n`;
+        if (deactivatedCount > 0) message += `✗ Deactivated: ${deactivatedCount} quarter(s)\n`;
+        if (response.data.current_active) {
+          message += `\n📌 Current Active: ${response.data.current_active.name}`;
+        }
+        
+        showAlert(message.replace(/\n/g, ' '), 'success');
+        
+        // Refresh the list
+        if (schoolYearId) {
+          fetchQuarters();
+        } else {
+          fetchAllQuarters();
+        }
+      } else {
+        showAlert(response.data.message || 'Failed to auto-update quarters', 'error');
+      }
+    } catch (error) {
+      console.error('Error auto-updating quarters:', error);
+      showAlert(error.response?.data?.message || 'Failed to auto-update quarters', 'error');
+    } finally {
+      setIsAutoUpdating(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -424,24 +480,37 @@ const Quarters = () => {
               </p>
             </div>
             
-            <button 
-              onClick={() => {
-                setEditingQuarter(null);
-                setFormData({
-                  name: '',
-                  start_date: '',
-                  end_date: '',
-                  is_active: false,
-                  is_locked: false,
-                  school_year_id: schoolYearId || '',
-                });
-                setShowModal(true);
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-medium"
-            >
-              <Plus size={16} />
-              Add Quarter
-            </button>
+            <div className="flex gap-3">
+              {/* ✅ AUTO-UPDATE BUTTON - IDINAGDAG ITO */}
+              <button 
+                onClick={handleAutoUpdate}
+                disabled={isAutoUpdating}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all text-sm font-medium disabled:opacity-50"
+                title="Auto-update quarters based on current date"
+              >
+                {isAutoUpdating ? <Loader2 size={16} className="animate-spin" /> : <Rocket size={16} />}
+                {isAutoUpdating ? 'Updating...' : 'Auto-Update'}
+              </button>
+              
+              <button 
+                onClick={() => {
+                  setEditingQuarter(null);
+                  setFormData({
+                    name: '',
+                    start_date: '',
+                    end_date: '',
+                    is_active: false,
+                    is_locked: false,
+                    school_year_id: schoolYearId || '',
+                  });
+                  setShowModal(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-medium"
+              >
+                <Plus size={16} />
+                Add Quarter
+              </button>
+            </div>
           </div>
         </div>
 

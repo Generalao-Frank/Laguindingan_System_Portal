@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\MobileConfigController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Admin\TeacherController;
 use App\Http\Controllers\Admin\StudentController;
@@ -17,6 +18,10 @@ use App\Http\Controllers\Admin\AttendanceController;
 use App\Http\Controllers\Admin\EnrollmentController;
 use App\Http\Controllers\Admin\BulkEnrollmentController;
 use App\Http\Controllers\Admin\MeetingController;
+use App\Http\Controllers\Admin\AuditLogController;
+use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\SystemHealthController;
+
 use App\Http\Controllers\Admin\ActivityController;
 
 
@@ -32,13 +37,22 @@ use App\Http\Controllers\Student\ActivityController as StudentActivityController
 use App\Http\Controllers\Student\ProfileController as StudentProfileController;
 use App\Http\Controllers\Student\AnnouncementController as StudentAnnouncementController;
 
+
+
+
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\SchoolYearController;
-
+use App\Http\Controllers\Admin\GraduationReportController;
 
 
 // Public API routes
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/verify-otp', [AuthController::class, 'verifyOTP']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+
+//  Mobile app configuration
+Route::get('/mobile-config', [MobileConfigController::class, 'getConfig']);
 
 // Protected API routes (require authentication)
 Route::middleware('auth:sanctum')->group(function () {
@@ -50,6 +64,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/profile', [ProfileController::class, 'getProfile']);
     Route::post('/upload-profile', [ProfileController::class, 'uploadProfile']);
     Route::delete('/remove-profile', [ProfileController::class, 'removeProfile']);
+     Route::put('/profile/change-password', [ProfileController::class, 'changePassword']);
+    Route::put('/profile/update', [ProfileController::class, 'updateProfile']);
 });
 
 // Admin only routes
@@ -72,6 +88,8 @@ Route::middleware(['auth:sanctum', 'role:Admin'])->prefix('admin')->group(functi
     Route::post('/students/{id}/transfer', [StudentController::class, 'transfer']);
     Route::post('/students/{id}/drop', [StudentController::class, 'drop']);
     Route::get('/students/{id}/status-history', [StudentController::class, 'getStatusHistory']);
+
+      Route::get('/students/{id}/performance', [StudentController::class, 'performance']);
 
     // School Years - ADD THIS BLOCK
     Route::get('/school-years', [SchoolYearController::class, 'index']);
@@ -128,10 +146,20 @@ Route::get('/school-years/{id}/quarters', [QuarterController::class, 'getQuarter
 Route::post('/quarters', [QuarterController::class, 'store']);
 Route::put('/quarters/{id}', [QuarterController::class, 'update']);
 Route::delete('/quarters/{id}', [QuarterController::class, 'destroy']);
+Route::post('/quarters/auto-update', [QuarterController::class, 'autoUpdateStatus']);
+Route::get('/quarters/active', [QuarterController::class, 'getActiveQuarter']);
 
 // Dashboard
 
  Route::get('/dashboard', [DashboardController::class, 'index']);
+ Route::get('/today-birthdays', [DashboardController::class, 'todayBirthdays']);
+ Route::get('/birthdays', [DashboardController::class, 'birthdays']);
+
+// Audit Logs (Admin)
+Route::get('/audit-logs', [AuditLogController::class, 'index']);
+Route::get('/audit-logs/{id}', [AuditLogController::class, 'show']);
+Route::get('/audit-logs/action-types', [AuditLogController::class, 'actionTypes']);
+ 
 
 // Grades
 Route::get('/grades', [GradeController::class, 'index']);
@@ -140,17 +168,19 @@ Route::get('/grades/pending', [GradeController::class, 'pendingGrades']);
 Route::get('/grades/stats', [GradeController::class, 'stats']);
 Route::post('/grades/{id}/approve', [GradeController::class, 'approveGrade']);
 Route::post('/grades/{id}/reject', [GradeController::class, 'rejectGrade']);
+Route::get('/grades/student/{studentId}', [GradeController::class, 'getStudentGrades']);
 
 // QR Code Management
 Route::get('/qr/stats', [QRCodeController::class, 'stats']);
-Route::post('/qr/generate', [QRCodeController::class, 'generate']);
-Route::post('/qr/bulk-generate', [QRCodeController::class, 'bulkGenerate']);
-Route::get('/qr/student/{id}', [QRCodeController::class, 'getStudentQR']);
+    Route::get('/qr/student/{studentInfoId}', [QRCodeController::class, 'getStudentQR']);
+    Route::post('/qr/regenerate/{studentInfoId}', [QRCodeController::class, 'regenerate']); // Optional
 
 // ==================== ATTENDANCE ====================
 Route::get('/attendance', [AttendanceController::class, 'index']);
 Route::get('/attendance/report', [AttendanceController::class, 'report']);
 Route::get('/attendance/summary', [AttendanceController::class, 'summary']);
+Route::get('/attendance/quarterly-summary', [AttendanceController::class, 'quarterlySummary']);
+  Route::get('/attendance/quarterly-summary', [AttendanceController::class, 'quarterlySummary']);
 
 // ==================== ENROLLMENTS ====================
 Route::get('/enrollments', [EnrollmentController::class, 'index']);
@@ -163,6 +193,8 @@ Route::post('/enrollments/{id}/transfer', [EnrollmentController::class, 'transfe
 Route::post('/enrollments/{id}/drop', [EnrollmentController::class, 'drop']);
 Route::post('/enrollments/{id}/complete', [EnrollmentController::class, 'complete']);
 Route::delete('/enrollments/{id}', [EnrollmentController::class, 'destroy']);
+Route::get('/reports/enrollment', [EnrollmentController::class, 'enrollmentReport']);
+ Route::get('/reports/graduation', [GraduationReportController::class, 'index']);   
 
 // Bulk Enrollment
 
@@ -175,6 +207,19 @@ Route::delete('/enrollments/{id}', [EnrollmentController::class, 'destroy']);
     Route::post('/meetings', [MeetingController::class, 'store']);
     Route::put('/meetings/{id}', [MeetingController::class, 'update']);
     Route::delete('/meetings/{id}', [MeetingController::class, 'destroy']);
+
+//Settings
+Route::get('/settings', [SettingsController::class, 'index']);
+Route::put('/settings/general', [SettingsController::class, 'updateGeneral']);
+Route::put('/settings/system', [SettingsController::class, 'updateSystem']);
+Route::get('/backup', [SettingsController::class, 'backup']);
+Route::post('/clear-cache', [SettingsController::class, 'clearCache']);
+
+
+Route::get('/system-health', [SystemHealthController::class, 'index']);
+Route::get('/api-key', [SystemHealthController::class, 'getApiKey']);
+Route::post('/regenerate-api-key', [SystemHealthController::class, 'regenerateApiKey']);
+    
 });
 
     //All Activities
@@ -187,6 +232,10 @@ Route::delete('/enrollments/{id}', [EnrollmentController::class, 'destroy']);
     // Route::get('/activities/{id}/submissions', [ActivityController::class, 'submissions']);
     // Route::post('/submissions/{id}/grade', [ActivityController::class, 'gradeSubmission']);
 
+
+
+
+
     // Teacher mobile routes
   Route::middleware(['auth:sanctum'])->group(function () {
     // Teacher mobile routes
@@ -194,6 +243,7 @@ Route::delete('/enrollments/{id}', [EnrollmentController::class, 'destroy']);
 
     Route::post('/expo-token', [TeacherMobileController::class, 'storeExpoToken']);
 
+        Route::get('/my-logs', [AuditLogController::class, 'userLogs']);
         Route::get('/dashboard', [TeacherMobileController::class, 'dashboard']);
         Route::get('/attendance', [TeacherMobileController::class, 'getAttendanceList']);
         Route::post('/attendance/mark', [TeacherMobileController::class, 'markAttendance']);
@@ -222,6 +272,11 @@ Route::delete('/enrollments/{id}', [EnrollmentController::class, 'destroy']);
     Route::post('/submissions/{id}/grade', [TeacherActivityController::class, 'gradeSubmission']);
     });
 
+
+
+
+
+
     // Student Routes (need authentication)
 Route::middleware(['auth:sanctum', 'role:Student'])->prefix('student')->group(function () {
     Route::get('/dashboard', [StudentDashboardController::class, 'index']);
@@ -240,5 +295,7 @@ Route::post('/upload-profile', [StudentProfileController::class, 'uploadProfileP
 Route::post('/update-profile-picture', [StudentProfileController::class, 'updateProfilePicture']);
 Route::post('/change-password', [StudentProfileController::class, 'changePassword']);
 });
+
+
 
 });

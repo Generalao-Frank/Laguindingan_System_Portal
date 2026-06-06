@@ -8,7 +8,6 @@ use App\Models\StudentsInfo;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 class QRCodeController extends Controller
 {
@@ -30,93 +29,59 @@ class QRCodeController extends Controller
         ]);
     }
     
-    public function generate(Request $request)
+    // Get QR code for a specific student
+    public function getStudentQR($studentInfoId)
     {
-        $request->validate([
-            'student_id' => 'required|exists:students_info,id',
-            'qr_data' => 'required|string',
+        $qrCode = StudentQrCode::where('student_id', $studentInfoId)->first();
+        
+        if (!$qrCode) {
+            return response()->json([
+                'success' => false,
+                'message' => 'QR code not found'
+            ], 404);
+        }
+        
+        return response()->json([
+            'success' => true,
+            'qr_code' => $qrCode
         ]);
-        
-        DB::beginTransaction();
-        
-        try {
-            $qrCode = StudentQrCode::updateOrCreate(
-                ['student_id' => $request->student_id],
-                ['qr_data' => $request->qr_data]
-            );
-            
-            DB::commit();
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'QR Code generated successfully',
-                'qr_code' => $qrCode
-            ]);
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to generate QR code: ' . $e->getMessage()
-            ], 500);
-        }
     }
     
-    public function bulkGenerate(Request $request)
+    // Optional: Regenerate QR code if needed
+    public function regenerate($studentInfoId)
     {
-        $students = StudentsInfo::doesntHave('qrCode')->get();
+        $studentInfo = StudentsInfo::find($studentInfoId);
         
-        DB::beginTransaction();
-        
-        try {
-            foreach ($students as $student) {
-                $user = $student->user;
-                $qrData = json_encode([
-                    'student_id' => $student->id,
-                    'lrn' => $student->lrn,
-                    'name' => $user->first_name . ' ' . $user->last_name,
-                    'grade_level' => $student->enrollments()->latest()->first()?->section?->grade_level,
-                ]);
-                
-                StudentQrCode::updateOrCreate(
-                    ['student_id' => $student->id],
-                    ['qr_data' => $qrData]
-                );
-            }
-            
-            DB::commit();
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Bulk QR codes generated successfully',
-                'count' => $students->count()
-            ]);
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to generate QR codes: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-    
-    public function getStudentQR($id)
-    {
-        $student = StudentsInfo::with('qrCode')->find($id);
-        
-        if (!$student) {
+        if (!$studentInfo) {
             return response()->json([
                 'success' => false,
                 'message' => 'Student not found'
             ], 404);
         }
         
+        $user = $studentInfo->user;
+        $enrollment = $studentInfo->enrollments()->where('status', 'Active')->first();
+        $section = $enrollment ? $enrollment->section : null;
+        $gradeLevel = $section && $section->gradeLevel ? $section->gradeLevel->grade_level : null;
+        
+        $qrData = json_encode([
+            'student_id' => $studentInfo->id,
+            'lrn' => $studentInfo->lrn,
+            'name' => $user->first_name . ' ' . $user->last_name,
+            'grade_level' => $gradeLevel,
+            'section' => $section ? $section->section_name : null,
+            'timestamp' => now()->toISOString()
+        ]);
+        
+        $qrCode = StudentQrCode::updateOrCreate(
+            ['student_id' => $studentInfo->id],
+            ['qr_data' => $qrData]
+        );
+        
         return response()->json([
             'success' => true,
-            'qr_code' => $student->qrCode
+            'message' => 'QR code regenerated successfully',
+            'qr_code' => $qrCode
         ]);
     }
 }

@@ -30,4 +30,9 @@ class StudentsInfo extends Model
     {
         return $this->hasMany(Enrollment::class, 'student_id');
     }
+
+      public function qrCode()
+    {
+        return $this->hasOne(StudentQrCode::class, 'student_id');
+    }
 }

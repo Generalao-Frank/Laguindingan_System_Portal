@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\User;
 use App\Models\StudentsInfo;
 use App\Models\Enrollment;
+use App\Models\StudentStatusHistory;
 use App\Models\Section;
 use App\Models\SchoolYear;
 use Shuchkin\SimpleXLSX;
@@ -18,23 +19,23 @@ use Shuchkin\SimpleXLSX;
 class BulkEnrollmentController extends Controller
 {
     // GET /admin/bulk-enrollment
- public function index()
-{
-    $sections = Section::with('gradeLevel')->get();
-    $schoolYears = SchoolYear::orderBy('year_start', 'desc')->get();
+    public function index()
+    {
+        $sections = Section::with('gradeLevel')->get();
+        $schoolYears = SchoolYear::orderBy('year_start', 'desc')->get();
 
-    return response()->json([
-        'success' => true,
-        'sections' => $sections->map(fn($s) => [
-            'id' => $s->id,
-            'section_name' => $s->section_name,
-            'grade_level' => $s->gradeLevel->grade_level,      // numeric (0,1,2...)
-            'grade_level_id' => $s->grade_level_id,           // ID mula sa grade_levels table
-            'school_year_id' => $s->school_year_id,           // para sa filter
-        ]),
-        'school_years' => $schoolYears,
-    ]);
-}
+        return response()->json([
+            'success' => true,
+            'sections' => $sections->map(fn($s) => [
+                'id' => $s->id,
+                'section_name' => $s->section_name,
+                'grade_level' => $s->gradeLevel->grade_level,      // numeric (0,1,2...)
+                'grade_level_id' => $s->grade_level_id,           // ID mula sa grade_levels table
+                'school_year_id' => $s->school_year_id,           // para sa filter
+            ]),
+            'school_years' => $schoolYears,
+        ]);
+    }
 
     // Download template CSV (walang email at username columns)
     public function downloadTemplate()
@@ -59,21 +60,21 @@ class BulkEnrollmentController extends Controller
     }
 
     // POST /admin/bulk-enrollment/upload
- public function upload(Request $request)
-{
-    $request->validate([
-        'file' => 'required|file|max:5120',
-        'section_id' => 'required|exists:sections,id',
-        'school_year_id' => 'required|exists:school_years,id',
-    ]);
+    public function upload(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|max:5120',
+            'section_id' => 'required|exists:sections,id',
+            'school_year_id' => 'required|exists:school_years,id',
+        ]);
 
-    $extension = $request->file('file')->getClientOriginalExtension();
-    if (!in_array(strtolower($extension), ['csv', 'xlsx', 'xls'])) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Invalid file type. Only CSV, XLSX, XLS are allowed.'
-        ], 422);
-    }
+        $extension = $request->file('file')->getClientOriginalExtension();
+        if (!in_array(strtolower($extension), ['csv', 'xlsx', 'xls'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid file type. Only CSV, XLSX, XLS are allowed.'
+            ], 422);
+        }
 
         $section = Section::with('gradeLevel')->findOrFail($request->section_id);
         $schoolYear = SchoolYear::findOrFail($request->school_year_id);
@@ -149,6 +150,20 @@ class BulkEnrollmentController extends Controller
                     'status' => 'Active',
                 ]);
 
+                // ✅ CREATE STUDENT STATUS HISTORY RECORD
+                $gradeDisplay = $section && $section->gradeLevel 
+                    ? ($section->gradeLevel->grade_level == 0 ? 'Kinder' : 'Grade ' . $section->gradeLevel->grade_level)
+                    : 'N/A';
+                
+                StudentStatusHistory::create([
+                    'student_id' => $studentInfo->id,
+                    'school_year_id' => $request->school_year_id,
+                    'status' => 'Enrolled',
+                    'effective_date' => now(),
+                    'remarks' => 'New enrollment for SY ' . $schoolYear->year_start . '-' . $schoolYear->year_end . ' - ' . $gradeDisplay . ' - ' . $section->section_name,
+                    'changed_by' => auth()->id() ?? 1,
+                ]);
+
                 $success++;
             } catch (\Exception $e) {
                 $failedRows[] = [
@@ -184,65 +199,65 @@ class BulkEnrollmentController extends Controller
         ]);
     }
 
-  private function parseFile($file)
-{
-    $ext = $file->getClientOriginalExtension();
-    
-    // CSV handling
-    if ($ext === 'csv') {
-        $rows = array_map('str_getcsv', file($file));
-        $header = array_shift($rows);
-        // Remove BOM if present
-        $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', $header[0]);
-        return array_map(fn($row) => array_combine($header, $row), $rows);
-    }
-    
-    // Excel handling using SimpleXLSX
-    $filePath = $file->getPathname();
-    if ($xlsx = SimpleXLSX::parse($filePath)) {
-        $rows = $xlsx->rows();
-        if (empty($rows)) return [];
-        $header = array_shift($rows);
-        if (!is_array($header)) return [];
-        // Clean header
-        $header = array_map(function($col) {
-            return strtolower(trim($col));
-        }, $header);
+    private function parseFile($file)
+    {
+        $ext = $file->getClientOriginalExtension();
         
-        $data = [];
-        foreach ($rows as $row) {
-            $combined = [];
-            foreach ($header as $idx => $key) {
-                $value = $row[$idx] ?? '';
-                
-                // Fix LRN (scientific notation)
-                if ($key === 'lrn' && is_numeric($value)) {
-                    $value = number_format($value, 0, '', '');
-                }
-                
-                // Fix contact numbers (leading zero)
-                if (in_array($key, ['contact_number', 'guardian_contact_number']) && is_numeric($value)) {
-                    $value = (string) (int) $value;
-                    // Kung 10 digits ang haba, ibigay ang nawawalang leading zero
-                    if (strlen($value) === 10) {
-                        $value = '0' . $value;
-                    }
-                }
-                
-                // PSA Number: convert to string para hindi maging scientific notation
-                if ($key === 'psa_number' && is_numeric($value)) {
-                    $value = (string) (int) $value;
-                }
-                
-                $combined[$key] = $value;
-            }
-            $data[] = $combined;
+        // CSV handling
+        if ($ext === 'csv') {
+            $rows = array_map('str_getcsv', file($file));
+            $header = array_shift($rows);
+            // Remove BOM if present
+            $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', $header[0]);
+            return array_map(fn($row) => array_combine($header, $row), $rows);
         }
-        return $data;
+        
+        // Excel handling using SimpleXLSX
+        $filePath = $file->getPathname();
+        if ($xlsx = SimpleXLSX::parse($filePath)) {
+            $rows = $xlsx->rows();
+            if (empty($rows)) return [];
+            $header = array_shift($rows);
+            if (!is_array($header)) return [];
+            // Clean header
+            $header = array_map(function($col) {
+                return strtolower(trim($col));
+            }, $header);
+            
+            $data = [];
+            foreach ($rows as $row) {
+                $combined = [];
+                foreach ($header as $idx => $key) {
+                    $value = $row[$idx] ?? '';
+                    
+                    // Fix LRN (scientific notation)
+                    if ($key === 'lrn' && is_numeric($value)) {
+                        $value = number_format($value, 0, '', '');
+                    }
+                    
+                    // Fix contact numbers (leading zero)
+                    if (in_array($key, ['contact_number', 'guardian_contact_number']) && is_numeric($value)) {
+                        $value = (string) (int) $value;
+                        // Kung 10 digits ang haba, ibigay ang nawawalang leading zero
+                        if (strlen($value) === 10) {
+                            $value = '0' . $value;
+                        }
+                    }
+                    
+                    // PSA Number: convert to string para hindi maging scientific notation
+                    if ($key === 'psa_number' && is_numeric($value)) {
+                        $value = (string) (int) $value;
+                    }
+                    
+                    $combined[$key] = $value;
+                }
+                $data[] = $combined;
+            }
+            return $data;
+        }
+        
+        return [];
     }
-    
-    return [];
-}
 
     private function validationRules()
     {

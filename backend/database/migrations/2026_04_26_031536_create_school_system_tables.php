@@ -20,7 +20,6 @@
                 $table->string('middle_name');
                 $table->string('last_name');
                 $table->enum('gender', ['Male', 'Female']);
-                $table->string('suffix')->nullable();
                 $table->date('birthdate')->nullable();
                 $table->text('address')->nullable();
                 $table->string('contact_number', 11)->nullable();
@@ -114,7 +113,7 @@
             Schema::create('students_info', function (Blueprint $table) {
                 $table->id();
                 $table->foreignId('user_id')->unique()->constrained('users')->cascadeOnDelete();
-                $table->unsignedBigInteger('lrn')->unique();
+                $table->string('lrn')->unique();
                 $table->string('PSA_Number')->nullable()->unique();
                 $table->string('father_name');
                 $table->string('mother_name');

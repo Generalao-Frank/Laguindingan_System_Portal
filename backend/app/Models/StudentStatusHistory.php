@@ -35,7 +35,7 @@ class StudentStatusHistory extends Model
         return $this->belongsTo(SchoolYear::class, 'school_year_id');
     }
 
-    public function changedBy()
+    public function changedByUser   ()
     {
         return $this->belongsTo(User::class, 'changed_by');
     }

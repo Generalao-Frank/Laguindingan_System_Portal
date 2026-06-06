@@ -4,10 +4,11 @@ import {
   LayoutGrid, UserPlus, Users, LogOut, ShieldCheck, UserCheck, Settings, PieChart,
   Briefcase, Calendar, Award, TrendingUp, Activity, GraduationCap, BookOpen,
   ChevronDown, ChevronLeft, ChevronRight, School, Clock, FileText, QrCode,
-  Video, MessageSquare, Database, Download, CheckCircle, AlertCircle, Camera, X, Upload
+  Video, MessageSquare, Database, Download, CheckCircle, AlertCircle, Camera, X, Upload,
+  Cake, Gift, Star, ChevronRight as ChevronRightIcon
 } from 'lucide-react';
 import axios from 'axios';
-import lesLogo from '../assets/les_logo.png';
+import lesLogo from '../assets/les_logo1.png';
 import API_URL from '../config';
 
 const Sidebar = ({ onLogout, children }) => {
@@ -21,11 +22,29 @@ const Sidebar = ({ onLogout, children }) => {
   const [userData, setUserData] = useState(null);
   const fileInputRef = useRef(null);
 
-  
+  // System Overview Data
+  const [systemStats, setSystemStats] = useState({
+    totalStudents: 0,
+    totalTeachers: 0,
+    activeSections: 0,
+    schoolYear: 'Loading...',
+    currentTerm: 'Loading...'
+  });
+
+  // Birthday Data
+  const [birthdayData, setBirthdayData] = useState({
+    today: [],
+    upcoming: [],
+    all: []
+  });
+  const [showBirthdayModal, setShowBirthdayModal] = useState(false);
+  const [modalType, setModalType] = useState('upcoming'); // 'today' or 'upcoming'
 
   // Load user data and profile picture from server on mount
   useEffect(() => {
     fetchUserProfile();
+    fetchSystemStats();
+    fetchBirthdays();
   }, []);
 
   const fetchUserProfile = async () => {
@@ -41,18 +60,72 @@ const Sidebar = ({ onLogout, children }) => {
         if (response.data.user.profile_picture_url) {
           setProfileImage(response.data.user.profile_picture_url);
         }
-        // Update localStorage
         localStorage.setItem('userData', JSON.stringify(response.data.user));
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
-      // Fallback to localStorage
       const savedUserData = localStorage.getItem('userData');
       if (savedUserData) {
         const user = JSON.parse(savedUserData);
         setUserData(user);
         setProfileImage(user.profile_picture_url || null);
       }
+    }
+  };
+
+  const fetchSystemStats = async () => {
+    const token = localStorage.getItem('userToken');
+    if (!token) return;
+
+    try {
+      const response = await axios.get(`${API_URL}/admin/dashboard`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        setSystemStats({
+          totalStudents: response.data.stats.totalStudents || 0,
+          totalTeachers: response.data.stats.totalTeachers || 0,
+          activeSections: response.data.stats.totalSections || 0,
+          schoolYear: response.data.activeSchoolYear || 'N/A',
+          currentTerm: response.data.activeQuarter || 'N/A'
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching system stats:', error);
+    }
+  };
+
+  const fetchBirthdays = async () => {
+    const token = localStorage.getItem('userToken');
+    if (!token) return;
+
+    try {
+      const response = await axios.get(`${API_URL}/admin/birthdays`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        // Filter upcoming birthdays (within 30 days, excluding today)
+        const upcomingWithin30Days = (response.data.upcoming || []).filter(b => b.days_until <= 30 && b.days_until > 0);
+        
+        setBirthdayData({
+          today: response.data.today || [],
+          upcoming: upcomingWithin30Days,
+          all: response.data.all || []
+        });
+      } else {
+        setBirthdayData({
+          today: [],
+          upcoming: [],
+          all: []
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching birthdays:', error);
+      setBirthdayData({
+        today: [],
+        upcoming: [],
+        all: []
+      });
     }
   };
 
@@ -66,7 +139,6 @@ const Sidebar = ({ onLogout, children }) => {
     setOpenSubmenus(prev => ({ ...prev, [menuName]: !prev[menuName] }));
   };
 
-  // Upload profile picture to server
   const handleImageUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -96,7 +168,6 @@ const Sidebar = ({ onLogout, children }) => {
 
       if (response.data.success) {
         setProfileImage(response.data.profile_picture_url);
-        // Update userData in localStorage
         if (userData) {
           const updatedUser = { ...userData, profile_picture_url: response.data.profile_picture_url };
           setUserData(updatedUser);
@@ -113,7 +184,6 @@ const Sidebar = ({ onLogout, children }) => {
     }
   };
 
-  // Remove profile picture
   const removeProfileImage = async () => {
     const token = localStorage.getItem('userToken');
 
@@ -140,7 +210,6 @@ const Sidebar = ({ onLogout, children }) => {
     navigate('/');
   };
 
-  // Get user data from state or localStorage
   const getUserDisplayName = () => {
     try {
       const storedUser = localStorage.getItem('userData');
@@ -185,6 +254,34 @@ const Sidebar = ({ onLogout, children }) => {
   const adminName = getUserDisplayName();
   const adminRole = getAdminRole();
 
+  // Helper to format days without decimals
+  const formatDays = (days) => {
+    if (days === undefined || days === null) return '';
+    return Math.floor(days);
+  };
+
+  // Birthday icons and colors
+  const getBirthdayIcon = (role) => {
+    switch(role) {
+      case 'Student': return <GraduationCap size={12} className="text-emerald-400" />;
+      case 'Teacher': return <BookOpen size={12} className="text-blue-400" />;
+      case 'Admin': return <ShieldCheck size={12} className="text-purple-400" />;
+      default: return <Star size={12} className="text-yellow-400" />;
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+  };
+
+  // Open modal with specific type
+  const openBirthdayModal = (type) => {
+    setModalType(type);
+    setShowBirthdayModal(true);
+  };
+
   const menuItems = [
     { name: 'Dashboard', path: '/dashboard', icon: <LayoutGrid size={18} /> },
     { 
@@ -217,7 +314,6 @@ const Sidebar = ({ onLogout, children }) => {
     { 
       name: 'Grading System', icon: <FileText size={18} />, submenu: true,
       children: [
-        // { name: 'Grade Encoding', path: '/admin/grades/encode', icon: <FileText size={16} /> },
         { name: 'Grade Approvals', path: '/admin/grade-approvals', icon: <CheckCircle size={16} /> },
         { name: 'View All Grades', path: '/admin/grades', icon: <Database size={16} /> },
         { name: 'Grade Reports', path: '/admin/grades/reports', icon: <Download size={16} /> },
@@ -242,8 +338,6 @@ const Sidebar = ({ onLogout, children }) => {
     { 
       name: 'Announcement Management', icon: <Video size={18} />, submenu: true,
       children: [
-        // { name: 'All Activities', path: '/admin/activities', icon: <Video size={16} /> },
-        // { name: 'Student Submissions', path: '/admin/submissions', icon: <FileText size={16} /> },
         { name: 'Meetings', path: '/admin/meetings', icon: <MessageSquare size={16} /> },
       ]
     },
@@ -398,20 +492,108 @@ const Sidebar = ({ onLogout, children }) => {
                 <div className="px-3 space-y-2 mb-4">
                   <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10">
                     <div className="flex items-center gap-1.5 text-indigo-200/70 text-[10px]"><Users size={12} /><span>Total Students</span></div>
-                    <span className="text-white font-bold text-xs">0</span>
+                    <span className="text-white font-bold text-xs">{systemStats.totalStudents}</span>
                   </div>
                   <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10">
                     <div className="flex items-center gap-1.5 text-indigo-200/70 text-[10px]"><Briefcase size={12} /><span>Total Teachers</span></div>
-                    <span className="text-white font-bold text-xs">0</span>
+                    <span className="text-white font-bold text-xs">{systemStats.totalTeachers}</span>
                   </div>
                   <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10">
                     <div className="flex items-center gap-1.5 text-indigo-200/70 text-[10px]"><GraduationCap size={12} /><span>Active Sections</span></div>
-                    <span className="text-white font-bold text-xs">0</span>
+                    <span className="text-white font-bold text-xs">{systemStats.activeSections}</span>
                   </div>
                   <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10">
                     <div className="flex items-center gap-1.5 text-indigo-200/70 text-[10px]"><Calendar size={12} /><span>School Year</span></div>
-                    <span className="text-white font-bold text-xs">2024-2025</span>
+                    <span className="text-white font-bold text-xs">{systemStats.schoolYear}</span>
                   </div>
+
+                  {/* Today's Birthdays Section */}
+                  {birthdayData.today.length > 0 && (
+                    <div className="mt-3 pt-2 border-t border-white/10">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <Cake size={10} className="text-pink-400" />
+                          <span className="text-[8px] font-bold text-pink-300/80 uppercase tracking-wider">🎂 Today's Birthdays</span>
+                        </div>
+                        {birthdayData.today.length > 3 && (
+                          <button 
+                            onClick={() => openBirthdayModal('today')}
+                            className="flex items-center gap-0.5 text-[7px] font-medium text-indigo-300 hover:text-white transition-colors"
+                          >
+                            See All <ChevronRightIcon size={8} />
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {birthdayData.today.slice(0, 3).map((birthday, idx) => (
+                          <div 
+                            key={idx} 
+                            className="flex items-center justify-between p-1.5 rounded-lg bg-gradient-to-r from-pink-500/20 to-purple-500/20 border border-pink-500/30"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              {getBirthdayIcon(birthday.role)}
+                              <div>
+                                <p className="text-[9px] font-medium text-white">{birthday.name}</p>
+                                <p className="text-[7px] text-indigo-300/70">
+                                  {birthday.role === 'Student' ? birthday.grade_section : 
+                                   birthday.role === 'Teacher' ? birthday.subject : birthday.position}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Gift size={8} className="text-pink-400" />
+                              <span className="text-[8px] font-bold text-pink-300">Today!</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Upcoming Birthdays Section (within 30 days, excluding today) */}
+                  {birthdayData.upcoming.length > 0 && (
+                    <div className="mt-3 pt-2 border-t border-white/10">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <Cake size={10} className="text-pink-400" />
+                          <span className="text-[8px] font-bold text-pink-300/80 uppercase tracking-wider"> Upcoming Birthdays</span>
+                        </div>
+                        {birthdayData.upcoming.length > 3 && (
+                          <button 
+                            onClick={() => openBirthdayModal('upcoming')}
+                            className="flex items-center gap-0.5 text-[7px] font-medium text-indigo-300 hover:text-white transition-colors"
+                          >
+                            See All <ChevronRightIcon size={8} />
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {birthdayData.upcoming.slice(0, 3).map((birthday, idx) => (
+                          <div 
+                            key={idx} 
+                            className="flex items-center justify-between p-1.5 rounded-lg bg-gradient-to-r from-pink-500/10 to-purple-500/10 border border-pink-500/20"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              {getBirthdayIcon(birthday.role)}
+                              <div>
+                                <p className="text-[9px] font-medium text-white">{birthday.name}</p>
+                                <p className="text-[7px] text-indigo-300/70">
+                                  {birthday.role === 'Student' ? birthday.grade_section : 
+                                   birthday.role === 'Teacher' ? birthday.subject : birthday.position}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Gift size={8} className="text-pink-400" />
+                              <span className="text-[8px] font-bold text-pink-300">
+                                in {formatDays(birthday.days_until)}d
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -423,7 +605,7 @@ const Sidebar = ({ onLogout, children }) => {
           {!isCollapsed && (
             <div className="mb-3 p-2 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 backdrop-blur-sm rounded-lg border border-indigo-400/30">
               <div className="flex items-center gap-1.5 text-indigo-200/80 text-[10px] font-medium"><Calendar size={10} /><span>Current Term</span></div>
-              <p className="text-white text-xs font-medium mt-0.5">📚 1st Quarter, SY 2024-2025</p>
+              <p className="text-white text-xs font-medium mt-0.5">📚 {systemStats.currentTerm}</p>
             </div>
           )}
           
@@ -481,6 +663,74 @@ const Sidebar = ({ onLogout, children }) => {
       <div className="flex-1 transition-all duration-300 bg-gray-50 min-h-screen" style={{ marginLeft: isCollapsed ? '5rem' : '18rem' }}>
         {children}
       </div>
+
+      {/* Birthday Modal - Dynamic based on type */}
+      {showBirthdayModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-gradient-to-br from-[#1E1B4B] to-[#2D2A5A] rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl border border-white/20">
+            <div className="flex items-center justify-between p-5 border-b border-white/20">
+              <div className="flex items-center gap-2">
+                <Cake size={20} className="text-pink-400" />
+                <h3 className="text-white font-bold text-lg">
+                  {modalType === 'today' ? "Today's Birthdays" : "Upcoming Birthdays"}
+                </h3>
+                {modalType === 'upcoming' && (
+                  <span className="text-xs text-pink-300">(next 30 days)</span>
+                )}
+              </div>
+              <button onClick={() => setShowBirthdayModal(false)} className="text-indigo-300 hover:text-white transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-5 space-y-3 custom-scrollbar">
+              {(modalType === 'today' ? birthdayData.today : birthdayData.upcoming).length > 0 ? (
+                (modalType === 'today' ? birthdayData.today : birthdayData.upcoming).map((birthday, idx) => (
+                  <div 
+                    key={idx} 
+                    className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-r from-pink-500/20 to-purple-500/20 flex items-center justify-center">
+                        {getBirthdayIcon(birthday.role)}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">{birthday.name}</p>
+                        <p className="text-[10px] text-indigo-300/70">
+                          {birthday.role === 'Student' ? birthday.grade_section : 
+                           birthday.role === 'Teacher' ? birthday.subject : birthday.position}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-pink-300 font-medium">
+                        {modalType === 'today' ? '🎉 Today!' : `in ${formatDays(birthday.days_until)} days`}
+                      </p>
+                      <p className="text-[9px] text-indigo-400">
+                        {formatDate(birthday.birthdate)}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <Cake size={40} className="text-indigo-400 mx-auto mb-3" />
+                  <p className="text-indigo-300">
+                    {modalType === 'today' ? 'No birthdays today' : 'No upcoming birthdays in the next 30 days'}
+                  </p>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t border-white/20 bg-white/5">
+              <div className="flex items-center justify-between text-[10px] text-indigo-300">
+                <span>Total: {(modalType === 'today' ? birthdayData.today : birthdayData.upcoming).length} celebrants</span>
+                <span>{modalType === 'today' ? '🎂 Happy Birthday!' : 'Sorted by upcoming date'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Upload Modal */}
       {showUploadModal && (

@@ -34,6 +34,22 @@ const AttendanceReport = () => {
 
   const token = localStorage.getItem('userToken');
 
+  // Format date function - converts ISO date to readable format
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return dateString;
+      return date.toLocaleDateString('en-PH', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (error) {
+      return dateString;
+    }
+  };
+
   // I‑filter ang mga section ayon sa napiling grade level
   const filteredSectionsByGrade = sections.filter(
     sec => sec.grade_level === parseInt(selectedGradeLevelFilter)
@@ -200,7 +216,7 @@ const AttendanceReport = () => {
     if (reportType === 'daily' && reportData.dailyStats?.length > 0) {
       headers = ['Date', 'Present', 'Late', 'Absent', 'Attendance Rate (%)'];
       rows = reportData.dailyStats.map(day => [
-        day.date,
+        formatDate(day.date),
         day.present,
         day.late,
         day.absent,
@@ -379,7 +395,7 @@ const AttendanceReport = () => {
               </div>
             )}
 
-            {/* Grade Level (bagong filter) */}
+            {/* Grade Level */}
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Grade Level</label>
               <select
@@ -397,7 +413,7 @@ const AttendanceReport = () => {
               </select>
             </div>
 
-            {/* Section – umaasa sa napiling grade level */}
+            {/* Section */}
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Section</label>
               <select
@@ -493,11 +509,11 @@ const AttendanceReport = () => {
               </div>
               <div className="bg-white border border-gray-100 rounded-xl p-4">
                 <p className="text-xs text-gray-400 uppercase">Best Day</p>
-                <p className="text-xs font-bold text-gray-700">{reportData.summary?.topPerformingDay || 'N/A'}</p>
+                <p className="text-xs font-bold text-gray-700">{formatDate(reportData.summary?.topPerformingDay) || 'N/A'}</p>
               </div>
               <div className="bg-white border border-gray-100 rounded-xl p-4">
                 <p className="text-xs text-gray-400 uppercase">Worst Day</p>
-                <p className="text-xs font-bold text-gray-700">{reportData.summary?.lowPerformingDay || 'N/A'}</p>
+                <p className="text-xs font-bold text-gray-700">{formatDate(reportData.summary?.lowPerformingDay) || 'N/A'}</p>
               </div>
             </div>
 
@@ -572,7 +588,7 @@ const AttendanceReport = () => {
                     {(reportType === 'daily' ? reportData.dailyStats : (reportType === 'weekly' || reportType === 'quarterly' ? reportData.weeklyStats : reportData.monthlyStats))?.map((item, index) => (
                       <tr key={index} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-5 py-3 text-sm font-medium text-gray-800">
-                          {reportType === 'daily' ? item.date : (reportType === 'weekly' || reportType === 'quarterly' ? item.week : item.month)}
+                          {reportType === 'daily' ? formatDate(item.date) : (reportType === 'weekly' || reportType === 'quarterly' ? item.week : item.month)}
                         </td>
                         <td className="px-5 py-3 text-center text-sm text-green-600 font-semibold">{item.present}</td>
                         <td className="px-5 py-3 text-center text-sm text-yellow-600">{item.late}</td>

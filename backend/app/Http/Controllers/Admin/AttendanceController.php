@@ -31,7 +31,7 @@ class AttendanceController extends Controller
             ->with(['student.user', 'student'])
             ->get();
         
-        // Get attendance records for the date
+        // Get attendance records for the date - use distinct student_id
         $attendanceRecords = Attendance::where('date', $request->date)
             ->whereIn('enrollment_id', $enrollments->pluck('id'))
             ->get()
@@ -90,6 +90,8 @@ class AttendanceController extends Controller
             ->with(['student.user', 'student'])
             ->get();
         
+        $enrollmentIds = $enrollments->pluck('id');
+        
         // If no enrollments, return empty report
         if ($enrollments->isEmpty()) {
             return response()->json([
@@ -122,7 +124,7 @@ class AttendanceController extends Controller
         
         // Get attendance records for the date range
         $attendanceRecords = Attendance::whereBetween('date', [$startDate, $endDate])
-            ->whereIn('enrollment_id', $enrollments->pluck('id'))
+            ->whereIn('enrollment_id', $enrollmentIds)
             ->get();
         
         // Calculate summary statistics
@@ -173,7 +175,6 @@ class AttendanceController extends Controller
                 return [$today->copy()->subMonths(5)->startOfMonth()->toDateString(), $today->toDateString()];
             case 'quarterly':
                 $quarter = Quarter::find($request->quarter_id);
-                // Fallback kung walang quarter
                 if (!$quarter) {
                     return [$today->copy()->subDays(30)->toDateString(), $today->toDateString()];
                 }
@@ -189,33 +190,49 @@ class AttendanceController extends Controller
     {
         $totalDays = max(1, Carbon::parse($startDate)->diffInDays(Carbon::parse($endDate)) + 1);
         $totalStudents = $enrollments->count();
-        $totalAttendance = $attendanceRecords->count();
         
-        $averageDailyAttendance = $totalDays > 0 ? round($totalAttendance / $totalDays, 1) : 0;
-        $overallAttendanceRate = ($totalStudents * $totalDays) > 0 
-            ? round(($totalAttendance / ($totalStudents * $totalDays)) * 100, 1) 
+        // Get unique dates that have attendance records
+        $uniqueDates = $attendanceRecords->unique('date')->pluck('date')->toArray();
+        $actualSchoolDays = count($uniqueDates);
+        
+        // Count UNIQUE student attendance per day (not total records)
+        $uniqueAttendanceCount = 0;
+        foreach ($uniqueDates as $date) {
+            $uniqueStudentsOnDate = $attendanceRecords
+                ->where('date', $date)
+                ->unique('enrollment_id')
+                ->count();
+            $uniqueAttendanceCount += $uniqueStudentsOnDate;
+        }
+        
+        $totalPossible = $totalStudents * $actualSchoolDays;
+        $overallAttendanceRate = $totalPossible > 0 
+            ? round(($uniqueAttendanceCount / $totalPossible) * 100, 1) 
             : 0;
         
-        // Find top and low performing days
-        $dailyAttendance = $attendanceRecords->groupBy('date')
-            ->map(function($records, $date) use ($totalStudents) {
-                $count = $records->count();
-                return [
-                    'date' => $date,
-                    'count' => $count,
-                    'rate' => $totalStudents > 0 ? round(($count / $totalStudents) * 100, 1) : 0
-                ];
-            });
+        $averageDailyAttendance = $actualSchoolDays > 0 ? round($uniqueAttendanceCount / $actualSchoolDays, 1) : 0;
         
-        $topDay = $dailyAttendance->sortByDesc('rate')->first();
-        $lowDay = $dailyAttendance->sortBy('rate')->first();
+        // Find top and low performing days using UNIQUE students
+        $dailyAttendance = [];
+        foreach ($uniqueDates as $date) {
+            $uniqueCount = $attendanceRecords
+                ->where('date', $date)
+                ->unique('enrollment_id')
+                ->count();
+            $rate = $totalStudents > 0 ? round(($uniqueCount / $totalStudents) * 100, 1) : 0;
+            $dailyAttendance[] = ['date' => $date, 'count' => $uniqueCount, 'rate' => $rate];
+        }
+        
+        usort($dailyAttendance, fn($a, $b) => $b['rate'] <=> $a['rate']);
+        $topDay = $dailyAttendance[0] ?? null;
+        $lowDay = end($dailyAttendance) ?: null;
         
         return [
-            'totalDays' => $totalDays,
+            'totalDays' => $actualSchoolDays,
             'totalStudents' => $totalStudents,
-            'totalAttendance' => $totalAttendance,
+            'totalAttendance' => $uniqueAttendanceCount,
             'averageDailyAttendance' => $averageDailyAttendance,
-            'overallAttendanceRate' => $overallAttendanceRate,
+            'overallAttendanceRate' => min(100, $overallAttendanceRate),
             'topPerformingDay' => $topDay ? $topDay['date'] : null,
             'lowPerformingDay' => $lowDay ? $lowDay['date'] : null,
         ];
@@ -226,23 +243,31 @@ class AttendanceController extends Controller
         $totalStudents = $enrollments->count();
         
         if ($reportType === 'daily') {
-            // Daily stats
-            $dailyStats = $attendanceRecords->groupBy('date')
-                ->map(function($records, $date) use ($totalStudents) {
-                    $present = $records->where('status', 'Present')->count();
-                    $late = $records->where('status', 'Late')->count();
-                    $absent = $totalStudents - $records->count();
-                    
-                    return [
-                        'date' => $date,
-                        'present' => $present,
-                        'late' => $late,
-                        'absent' => max(0, $absent),
-                        'rate' => $totalStudents > 0 ? round(($records->count() / $totalStudents) * 100, 1) : 0
-                    ];
-                })->values()->toArray();
+            // Daily stats - ONLY show dates that have attendance records
+            $dailyStats = [];
             
-            // If no records, still return empty array
+            // Get unique dates that have attendance records
+            $datesWithAttendance = $attendanceRecords->unique('date')->pluck('date')->toArray();
+            
+            // Sort dates chronologically
+            sort($datesWithAttendance);
+            
+            foreach ($datesWithAttendance as $date) {
+                $recordsOnDate = $attendanceRecords->where('date', $date);
+                $uniquePresent = $recordsOnDate->where('status', 'Present')->unique('enrollment_id')->count();
+                $uniqueLate = $recordsOnDate->where('status', 'Late')->unique('enrollment_id')->count();
+                $uniquePresentOrLate = $recordsOnDate->unique('enrollment_id')->count();
+                $absent = max(0, $totalStudents - $uniquePresentOrLate);
+                
+                $dailyStats[] = [
+                    'date' => $date,
+                    'present' => $uniquePresent,
+                    'late' => $uniqueLate,
+                    'absent' => $absent,
+                    'rate' => $totalStudents > 0 ? min(100, round(($uniquePresentOrLate / $totalStudents) * 100, 1)) : 0
+                ];
+            }
+            
             return ['daily' => $dailyStats, 'weekly' => [], 'monthly' => []];
         } 
         
@@ -251,97 +276,126 @@ class AttendanceController extends Controller
             $start = Carbon::parse($startDate);
             $end = Carbon::parse($endDate);
             
-            for ($date = $start->copy(); $date <= $end; $date->addWeek()) {
-                $weekStart = $date->copy()->startOfWeek();
-                $weekEnd = $date->copy()->endOfWeek();
+            // Get unique weeks that have attendance
+            $weeksWithAttendance = [];
+            foreach ($attendanceRecords->unique('date') as $record) {
+                $weekNum = Carbon::parse($record->date)->weekOfYear;
+                $year = Carbon::parse($record->date)->year;
+                $weeksWithAttendance["{$year}-W{$weekNum}"] = $weekNum;
+            }
+            
+            foreach ($weeksWithAttendance as $weekKey => $weekNum) {
+                $weekStart = Carbon::now()->setISODate($year, $weekNum)->startOfWeek();
+                $weekEnd = Carbon::now()->setISODate($year, $weekNum)->endOfWeek();
+                
                 $weekRecords = $attendanceRecords->filter(function($record) use ($weekStart, $weekEnd) {
                     $recordDate = Carbon::parse($record->date);
                     return $recordDate >= $weekStart && $recordDate <= $weekEnd;
                 });
                 
-                $present = $weekRecords->where('status', 'Present')->count();
-                $late = $weekRecords->where('status', 'Late')->count();
-                $totalPossible = $totalStudents * 5;
-                $rate = $totalPossible > 0 ? round(($weekRecords->count() / $totalPossible) * 100, 1) : 0;
+                // Get unique dates in this week that have attendance
+                $weekDates = $weekRecords->unique('date')->pluck('date')->toArray();
+                $totalUniqueAttendance = 0;
+                foreach ($weekDates as $weekDate) {
+                    $uniqueOnDate = $weekRecords->where('date', $weekDate)->unique('enrollment_id')->count();
+                    $totalUniqueAttendance += $uniqueOnDate;
+                }
+                
+                $present = $weekRecords->where('status', 'Present')->unique('enrollment_id')->count();
+                $late = $weekRecords->where('status', 'Late')->unique('enrollment_id')->count();
+                $totalPossible = $totalStudents * count($weekDates);
+                $rate = $totalPossible > 0 ? min(100, round(($totalUniqueAttendance / $totalPossible) * 100, 1)) : 0;
                 
                 $weeklyStats[] = [
-                    'week' => 'Week ' . $date->weekOfYear,
+                    'week' => 'Week ' . $weekNum,
                     'present' => $present,
                     'late' => $late,
-                    'absent' => max(0, ($totalStudents * 5) - $weekRecords->count()),
+                    'absent' => max(0, $totalPossible - $totalUniqueAttendance),
                     'rate' => $rate,
                 ];
             }
             return ['daily' => [], 'weekly' => $weeklyStats, 'monthly' => []];
         }
         
-        // Monthly stats
+        // Monthly stats - ONLY show months that have attendance records
         $monthlyStats = [];
-        $start = Carbon::parse($startDate);
-        $end = Carbon::parse($endDate);
+        $monthsWithAttendance = [];
         
-        for ($date = $start->copy(); $date <= $end; $date->addMonth()) {
-            $monthStart = $date->copy()->startOfMonth();
-            $monthEnd = $date->copy()->endOfMonth();
+        foreach ($attendanceRecords->unique('date') as $record) {
+            $monthYear = Carbon::parse($record->date)->format('Y-m');
+            $monthsWithAttendance[$monthYear] = Carbon::parse($record->date)->format('M');
+        }
+        
+        foreach ($monthsWithAttendance as $monthYear => $monthName) {
+            $monthStart = Carbon::parse($monthYear . '-01')->startOfMonth();
+            $monthEnd = Carbon::parse($monthYear . '-01')->endOfMonth();
+            
             $monthRecords = $attendanceRecords->filter(function($record) use ($monthStart, $monthEnd) {
                 $recordDate = Carbon::parse($record->date);
                 return $recordDate >= $monthStart && $recordDate <= $monthEnd;
             });
             
-            $daysInMonth = $monthStart->daysInMonth;
-            $present = $monthRecords->where('status', 'Present')->count();
-            $late = $monthRecords->where('status', 'Late')->count();
-            $totalPossible = $totalStudents * $daysInMonth;
-            $rate = $totalPossible > 0 ? round(($monthRecords->count() / $totalPossible) * 100, 1) : 0;
+            // Get unique dates in this month that have attendance
+            $monthDates = $monthRecords->unique('date')->pluck('date')->toArray();
+            $totalUniqueAttendance = 0;
+            foreach ($monthDates as $monthDate) {
+                $uniqueOnDate = $monthRecords->where('date', $monthDate)->unique('enrollment_id')->count();
+                $totalUniqueAttendance += $uniqueOnDate;
+            }
+            
+            $present = $monthRecords->where('status', 'Present')->unique('enrollment_id')->count();
+            $late = $monthRecords->where('status', 'Late')->unique('enrollment_id')->count();
+            $totalPossible = $totalStudents * count($monthDates);
+            $rate = $totalPossible > 0 ? min(100, round(($totalUniqueAttendance / $totalPossible) * 100, 1)) : 0;
             
             $monthlyStats[] = [
-                'month' => $monthStart->format('M'),
+                'month' => $monthName,
                 'present' => $present,
                 'late' => $late,
-                'absent' => max(0, $totalPossible - $monthRecords->count()),
+                'absent' => max(0, $totalPossible - $totalUniqueAttendance),
                 'rate' => $rate,
             ];
         }
+        
         return ['daily' => [], 'weekly' => [], 'monthly' => $monthlyStats];
     }
 
     private function calculateStudentRankings($attendanceRecords, $enrollments)
     {
-        $studentAttendance = [];
+        // Get unique dates that have attendance
         $totalDays = $attendanceRecords->unique('date')->count();
         if ($totalDays === 0) return [];
         
+        $studentAttendance = [];
         foreach ($enrollments as $enrollment) {
             $user = $enrollment->student->user;
             $studentRecords = $attendanceRecords->where('enrollment_id', $enrollment->id);
+            
             $present = $studentRecords->where('status', 'Present')->count();
             $late = $studentRecords->where('status', 'Late')->count();
-            $absent = $totalDays - $studentRecords->count();
-            $rate = $totalDays > 0 ? round(($studentRecords->count() / $totalDays) * 100, 1) : 0;
+            $attendedDays = $studentRecords->unique('date')->count(); // UNIQUE days attended
+            $absent = max(0, $totalDays - $attendedDays);
+            $rate = $totalDays > 0 ? min(100, round(($attendedDays / $totalDays) * 100, 1)) : 0;
             
             $studentAttendance[] = [
                 'name' => $user->last_name . ', ' . $user->first_name,
                 'present' => $present,
                 'late' => $late,
-                'absent' => max(0, $absent),
+                'absent' => $absent,
                 'rate' => $rate
             ];
         }
         
-        // Sort by rate descending
-        usort($studentAttendance, function($a, $b) {
-            return $b['rate'] <=> $a['rate'];
-        });
-        
+        usort($studentAttendance, fn($a, $b) => $b['rate'] <=> $a['rate']);
         return array_slice($studentAttendance, 0, 10);
     }
 
     private function calculateStatusBreakdown($attendanceRecords)
     {
         return [
-            'present' => $attendanceRecords->where('status', 'Present')->count(),
-            'late' => $attendanceRecords->where('status', 'Late')->count(),
-            'absent' => $attendanceRecords->where('status', 'Absent')->count(),
+            'present' => $attendanceRecords->where('status', 'Present')->unique('enrollment_id')->count(),
+            'late' => $attendanceRecords->where('status', 'Late')->unique('enrollment_id')->count(),
+            'absent' => 0,
         ];
     }
 
@@ -350,49 +404,83 @@ class AttendanceController extends Controller
         $totalStudents = $enrollments->count();
         if ($totalStudents === 0) return ['weekly' => [], 'monthly' => []];
         
-        $start = Carbon::parse($startDate);
-        $end = Carbon::parse($endDate);
-        
-        // Weekly trends
+        // Weekly trends using UNIQUE students - only weeks with attendance
         $weeklyTrends = [];
-        for ($date = $start->copy(); $date <= $end; $date->addWeek()) {
-            $weekStart = $date->copy()->startOfWeek();
-            $weekEnd = $date->copy()->endOfWeek();
+        $weeksWithAttendance = [];
+        
+        foreach ($attendanceRecords->unique('date') as $record) {
+            $weekNum = Carbon::parse($record->date)->weekOfYear;
+            $year = Carbon::parse($record->date)->year;
+            $weeksWithAttendance["{$year}-W{$weekNum}"] = ['week' => $weekNum, 'year' => $year];
+        }
+        
+        foreach ($weeksWithAttendance as $weekData) {
+            $weekNum = $weekData['week'];
+            $year = $weekData['year'];
+            $weekStart = Carbon::now()->setISODate($year, $weekNum)->startOfWeek();
+            $weekEnd = Carbon::now()->setISODate($year, $weekNum)->endOfWeek();
+            
             $weekRecords = $attendanceRecords->filter(function($record) use ($weekStart, $weekEnd) {
                 $recordDate = Carbon::parse($record->date);
                 return $recordDate >= $weekStart && $recordDate <= $weekEnd;
             });
-            $totalPossible = $totalStudents * 5;
-            $rate = $totalPossible > 0 ? round(($weekRecords->count() / $totalPossible) * 100, 1) : 0;
-            $weeklyTrends[] = [
-                'week' => 'Week ' . $date->weekOfYear,
-                'rate' => $rate,
-            ];
+            
+            $weekDates = $weekRecords->unique('date')->pluck('date')->toArray();
+            $totalUniqueAttendance = 0;
+            foreach ($weekDates as $weekDate) {
+                $totalUniqueAttendance += $weekRecords->where('date', $weekDate)->unique('enrollment_id')->count();
+            }
+            
+            $totalPossible = $totalStudents * count($weekDates);
+            $rate = $totalPossible > 0 ? min(100, round(($totalUniqueAttendance / $totalPossible) * 100, 1)) : 0;
+            $weeklyTrends[] = ['week' => 'Week ' . $weekNum, 'rate' => $rate];
         }
         
-        // Monthly trends
+        // Monthly trends using UNIQUE students - only months with attendance
         $monthlyTrends = [];
-        $monthStart = Carbon::parse($startDate)->startOfMonth();
-        for ($date = $monthStart; $date <= $end; $date->addMonth()) {
-            $monthStartDate = $date->copy()->startOfMonth();
-            $monthEndDate = $date->copy()->endOfMonth();
-            $monthRecords = $attendanceRecords->filter(function($record) use ($monthStartDate, $monthEndDate) {
-                $recordDate = Carbon::parse($record->date);
-                return $recordDate >= $monthStartDate && $recordDate <= $monthEndDate;
-            });
-            $daysInMonth = $monthStartDate->daysInMonth;
-            $totalPossible = $totalStudents * $daysInMonth;
-            $rate = $totalPossible > 0 ? round(($monthRecords->count() / $totalPossible) * 100, 1) : 0;
-            $monthlyTrends[] = [
-                'month' => $monthStartDate->format('M'),
-                'rate' => $rate,
-            ];
+        $monthsWithAttendance = [];
+        
+        foreach ($attendanceRecords->unique('date') as $record) {
+            $monthYear = Carbon::parse($record->date)->format('Y-m');
+            $monthsWithAttendance[$monthYear] = Carbon::parse($record->date)->format('M');
         }
         
-        return [
-            'weekly' => $weeklyTrends,
-            'monthly' => $monthlyTrends,
-        ];
+        foreach ($monthsWithAttendance as $monthYear => $monthName) {
+            $monthStart = Carbon::parse($monthYear . '-01')->startOfMonth();
+            $monthEnd = Carbon::parse($monthYear . '-01')->endOfMonth();
+            
+            $monthRecords = $attendanceRecords->filter(function($record) use ($monthStart, $monthEnd) {
+                $recordDate = Carbon::parse($record->date);
+                return $recordDate >= $monthStart && $recordDate <= $monthEnd;
+            });
+            
+            $monthDates = $monthRecords->unique('date')->pluck('date')->toArray();
+            $totalUniqueAttendance = 0;
+            foreach ($monthDates as $monthDate) {
+                $totalUniqueAttendance += $monthRecords->where('date', $monthDate)->unique('enrollment_id')->count();
+            }
+            
+            $totalPossible = $totalStudents * count($monthDates);
+            $rate = $totalPossible > 0 ? min(100, round(($totalUniqueAttendance / $totalPossible) * 100, 1)) : 0;
+            $monthlyTrends[] = ['month' => $monthName, 'rate' => $rate];
+        }
+        
+        return ['weekly' => $weeklyTrends, 'monthly' => $monthlyTrends];
+    }
+
+    // Helper function to get array of dates between start and end
+    private function getDateRangeArray($startDate, $endDate)
+    {
+        $dates = [];
+        $current = Carbon::parse($startDate);
+        $end = Carbon::parse($endDate);
+        
+        while ($current <= $end) {
+            $dates[] = $current->toDateString();
+            $current->addDay();
+        }
+        
+        return $dates;
     }
 
     // Get attendance summary for a section and quarter
@@ -414,16 +502,24 @@ class AttendanceController extends Controller
             ->whereIn('enrollment_id', $enrollments->pluck('id'))
             ->get();
         
-        // Daily summary
-        $dailySummary = $attendanceRecords->groupBy('date')
-            ->map(function($records, $date) use ($enrollments) {
-                return [
-                    'date' => $date,
-                    'present' => $records->where('status', 'Present')->count(),
-                    'late' => $records->where('status', 'Late')->count(),
-                    'absent' => $enrollments->count() - $records->count(),
-                ];
-            })->values();
+        // Daily summary - ONLY show dates that have attendance records
+        $dailySummary = [];
+        $datesWithAttendance = $attendanceRecords->unique('date')->pluck('date')->toArray();
+        sort($datesWithAttendance);
+        
+        foreach ($datesWithAttendance as $date) {
+            $recordsOnDate = $attendanceRecords->where('date', $date);
+            $uniquePresent = $recordsOnDate->where('status', 'Present')->unique('enrollment_id')->count();
+            $uniqueLate = $recordsOnDate->where('status', 'Late')->unique('enrollment_id')->count();
+            $totalPresentOrLate = $recordsOnDate->unique('enrollment_id')->count();
+            
+            $dailySummary[] = [
+                'date' => $date,
+                'present' => $uniquePresent,
+                'late' => $uniqueLate,
+                'absent' => max(0, $enrollments->count() - $totalPresentOrLate),
+            ];
+        }
         
         return response()->json([
             'success' => true,
@@ -432,6 +528,184 @@ class AttendanceController extends Controller
                 'weekly' => [],
                 'monthly' => [],
             ]
+        ]);
+    }
+
+    /**
+     * Get quarterly attendance summary (for ViewAttendance page)
+     * Supports optional grade level and section filters.
+     * Weekly trend uses date range labels (e.g. "May 15 - May 21") with correct absent counts.
+     */
+    public function quarterlySummary(Request $request)
+    {
+        $request->validate([
+            'school_year_id' => 'required|exists:school_years,id',
+            'quarter_id'     => 'required|exists:quarters,id',
+            'grade_level'    => 'nullable|integer|min:0|max:6',
+            'section_id'     => 'nullable|exists:sections,id',
+        ]);
+
+        $schoolYearId = $request->school_year_id;
+        $quarterId    = $request->quarter_id;
+        $gradeLevel   = $request->grade_level;
+        $sectionId    = $request->section_id;
+
+        // Kunin ang quarter date range
+        $quarter = Quarter::with('schoolYear')->findOrFail($quarterId);
+        $startDate = $quarter->start_date;
+        $endDate   = $quarter->end_date;
+
+        // --- Kunin ang lahat ng enrollment na aktibo sa loob ng quarter ---
+        $enrollmentsQuery = Enrollment::where('school_year_id', $schoolYearId)
+            ->where('date_enrolled', '<=', $endDate)
+            ->with(['student.user', 'section.gradeLevel']);
+
+        // Filter ayon sa grade level (kung ibinigay)
+        if ($gradeLevel !== null) {
+            $enrollmentsQuery->whereHas('section.gradeLevel', function ($q) use ($gradeLevel) {
+                $q->where('grade_level', $gradeLevel);
+            });
+        }
+
+        // Filter ayon sa section (kung ibinigay)
+        if ($sectionId) {
+            $enrollmentsQuery->where('section_id', $sectionId);
+        }
+
+        $enrollments = $enrollmentsQuery->get();
+
+        // Kung walang enrollment, magbalik ng walang laman
+        if ($enrollments->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'stats' => [
+                    'totalStudents'  => 0,
+                    'present'        => 0,
+                    'late'           => 0,
+                    'absent'         => 0,
+                    'attendanceRate' => 0,
+                    'weeklyTrend'    => [],
+                ],
+                'students' => [],
+            ]);
+        }
+
+        // Kunin ang mga attendance records sa loob ng quarter para sa mga enrollment na ito
+        $attendanceRecords = Attendance::whereIn('enrollment_id', $enrollments->pluck('id'))
+            ->whereBetween('date', [$startDate, $endDate])
+            ->get();
+
+        // --- Kabuuang istatistika ---
+        $presentCount = $attendanceRecords->where('status', 'Present')->count();
+        $lateCount    = $attendanceRecords->where('status', 'Late')->count();
+        // Walang 'Absent' na record, kaya absentCount ay hindi na ginagamit sa overall stats. 
+        // Sa weekly trend natin kukuwentahin ang absent.
+
+        // Bilang ng araw na may attendance (maaaring hindi lahat ng araw ng quarter)
+        $uniqueDates = $attendanceRecords->unique('date')->count();
+        $totalPossible = $enrollments->count() * $uniqueDates;
+        $attendanceRate = $totalPossible > 0 ? round(($presentCount + $lateCount) / $totalPossible * 100, 1) : 0;
+        $attendanceRate = min(100, $attendanceRate);
+
+        // --- Weekly trend na may date range labels at tamang absent ---
+        $weeklyStats = [];
+        $start = Carbon::parse($startDate);
+        $end   = Carbon::parse($endDate);
+        $currentWeekStart = $start->copy()->startOfWeek();
+
+        $totalStudents = $enrollments->count();
+
+        while ($currentWeekStart <= $end) {
+            $weekEnd = $currentWeekStart->copy()->endOfWeek();
+            $weekRecords = $attendanceRecords->filter(function ($record) use ($currentWeekStart, $weekEnd) {
+                $recordDate = Carbon::parse($record->date);
+                return $recordDate >= $currentWeekStart && $recordDate <= $weekEnd;
+            });
+
+            // Bilang ng mga araw sa linggong ito na may kahit isang attendance record
+            $daysInWeek = $weekRecords->unique('date')->count();
+
+            // Kabuuang posibleng attendance entries sa linggong ito (kung lahat ng estudyante ay pumasok sa lahat ng araw na may attendance)
+            $totalPossibleThisWeek = $totalStudents * $daysInWeek;
+
+            $presentThisWeek = $weekRecords->where('status', 'Present')->count();
+            $lateThisWeek    = $weekRecords->where('status', 'Late')->count();
+            $absentThisWeek  = max(0, $totalPossibleThisWeek - ($presentThisWeek + $lateThisWeek));
+
+            $label = $currentWeekStart->format('M d') . ' - ' . $weekEnd->format('M d');
+            
+            $weeklyStats[] = [
+                'week'    => $label,
+                'present' => $presentThisWeek,
+                'late'    => $lateThisWeek,
+                'absent'  => $absentThisWeek,
+            ];
+            
+            $currentWeekStart->addWeek();
+        }
+
+        // --- Per‑student summary (may attendance rate at status) ---
+        $totalDaysInQuarter = $uniqueDates; // araw na may attendance records
+        $students = [];
+        foreach ($enrollments as $enrollment) {
+            $studentInfo = $enrollment->student;
+            $user = $studentInfo->user;
+            $section = $enrollment->section;
+            $gradeLevelObj = $section->gradeLevel ?? null;
+
+            $studentRecords = $attendanceRecords->where('enrollment_id', $enrollment->id);
+            $presentDays = $studentRecords->where('status', 'Present')->count();
+            $lateDays    = $studentRecords->where('status', 'Late')->count();
+            // Walang absent records, kaya absentDays ay computed
+            $attendedDays = $presentDays + $lateDays;
+            $absentDays   = max(0, $totalDaysInQuarter - $attendedDays);
+
+            $studentAttendanceRate = $totalDaysInQuarter > 0 ? round($attendedDays / $totalDaysInQuarter * 100, 1) : 0;
+            $studentAttendanceRate = min(100, $studentAttendanceRate);
+
+            // Tukuyin ang status batay sa attendance rate
+            if ($studentAttendanceRate >= 90) {
+                $status = 'Excellent';
+                $statusColor = 'green';
+            } elseif ($studentAttendanceRate >= 75) {
+                $status = 'Satisfactory';
+                $statusColor = 'yellow';
+            } else {
+                $status = 'Poor';
+                $statusColor = 'red';
+            }
+
+            $students[] = [
+                'id'              => $user->id,
+                'name'            => $user->last_name . ', ' . $user->first_name . ' ' . $user->middle_name,
+                'lrn'             => $studentInfo->lrn,
+                'profile_picture' => $user->profile_picture ? asset('storage/' . $user->profile_picture) : null,
+                'grade_level'     => $gradeLevelObj ? $gradeLevelObj->grade_level : null,
+                'grade_display'   => $gradeLevelObj ? ($gradeLevelObj->grade_level == 0 ? 'Kinder' : 'Grade ' . $gradeLevelObj->grade_level) : 'N/A',
+                'section'         => $section->section_name ?? null,
+                'present_days'    => $presentDays,
+                'late_days'       => $lateDays,
+                'absent_days'     => $absentDays,
+                'attendance_rate' => $studentAttendanceRate,
+                'status'          => $status,
+                'status_color'    => $statusColor,
+            ];
+        }
+
+        // Alisin ang posibleng duplicate (kung ang isang estudyante ay may maraming enrollment sa parehong quarter)
+        $students = collect($students)->unique('id')->values()->toArray();
+
+        return response()->json([
+            'success' => true,
+            'stats' => [
+                'totalStudents'  => $enrollments->count(),
+                'present'        => $presentCount,
+                'late'           => $lateCount,
+                'absent'         => 0, // hindi na ginagamit sa frontend pie chart? pero iwan na lang
+                'attendanceRate' => $attendanceRate,
+                'weeklyTrend'    => $weeklyStats,
+            ],
+            'students' => $students,
         ]);
     }
 }

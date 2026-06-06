@@ -10,13 +10,12 @@ import axios from 'axios';
 import QRCode from 'qrcode';
 import API_URL from '../config';
 
-const GenerateQR = () => {
+const ViewQR = () => {
   const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [qrCodeUrl, setQrCodeUrl] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGrade, setFilterGrade] = useState('all');
   const [filterSection, setFilterSection] = useState('all');
@@ -53,11 +52,6 @@ const GenerateQR = () => {
     } catch (error) {
       console.error('Error fetching students:', error);
       showAlert('Failed to load students', 'error');
-      // Fallback data
-      setStudents([
-        { id: 1, lrn: '123456789012', first_name: 'JUAN', last_name: 'DELA CRUZ', full_name: 'DELA CRUZ, JUAN D', grade_level: 6, section: 'DIAMOND', has_qr: false },
-        { id: 2, lrn: '123456789013', first_name: 'MARIA', last_name: 'REYES', full_name: 'REYES, MARIA E', grade_level: 5, section: 'EMERALD', has_qr: false },
-      ]);
     } finally {
       setIsLoading(false);
     }
@@ -107,51 +101,45 @@ const GenerateQR = () => {
     }
   };
 
-  const generateQRCode = async (student) => {
-    setIsGenerating(true);
+  // View QR code (no generation needed, just display)
+  const viewQRCode = async (student) => {
+    setIsLoading(true);
     setSelectedStudent(student);
     
     try {
-      // Create QR data
-      const qrData = {
-        student_id: student.id,
-        lrn: student.lrn,
-        name: `${student.first_name} ${student.last_name}`,
-        grade_level: student.grade_level,
-        section: student.section,
-        timestamp: new Date().toISOString()
-      };
+      // Check if student has QR code in database
+      let qrData = null;
       
-      const qrString = JSON.stringify(qrData);
-      
-      // Generate QR code as data URL
-      const qrDataUrl = await QRCode.toDataURL(qrString, {
-        width: 300,
-        margin: 2,
-        color: {
-          dark: '#1E1B4B',
-          light: '#FFFFFF'
+      if (student.has_qr) {
+        // Fetch existing QR code from backend
+        const response = await axios.get(`${API_URL}/admin/qr/student/${student.student_info_id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.data.success && response.data.qr_code) {
+          qrData = response.data.qr_code.qr_data;
         }
-      });
+      }
       
-      setQrCodeUrl(qrDataUrl);
-      
-      // Save to backend
-      await axios.post(`${API_URL}/admin/qr/generate`, {
-        student_id: student.id,
-        qr_data: qrString
-      }, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      showAlert(`QR Code generated for ${student.first_name} ${student.last_name}!`, 'success');
-      fetchStudents();
-      fetchStats();
+      if (qrData) {
+        // Generate QR code from existing data
+        const qrDataUrl = await QRCode.toDataURL(qrData, {
+          width: 300,
+          margin: 2,
+          color: {
+            dark: '#1E1B4B',
+            light: '#FFFFFF'
+          }
+        });
+        setQrCodeUrl(qrDataUrl);
+      } else {
+        showAlert('QR code not found for this student', 'error');
+      }
     } catch (error) {
-      console.error('Error generating QR code:', error);
-      showAlert('Failed to generate QR code', 'error');
+      console.error('Error viewing QR code:', error);
+      showAlert('Failed to load QR code', 'error');
     } finally {
-      setIsGenerating(false);
+      setIsLoading(false);
     }
   };
 
@@ -211,41 +199,19 @@ const GenerateQR = () => {
     printWindow.print();
   };
 
-  const handleBulkGenerate = async () => {
-    const studentsWithoutQR = students.filter(s => !s.has_qr);
-    if (studentsWithoutQR.length === 0) {
-      showAlert('All students already have QR codes!', 'error');
-      return;
-    }
-    
-    if (!window.confirm(`Generate QR codes for ${studentsWithoutQR.length} student(s) who don't have QR codes?`)) {
-      return;
-    }
-    
-    setIsGenerating(true);
-    
-    try {
-      await axios.post(`${API_URL}/admin/qr/bulk-generate`, {}, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      showAlert(`QR codes generated for ${studentsWithoutQR.length} student(s)!`, 'success');
-      fetchStudents();
-      fetchStats();
-    } catch (error) {
-      console.error('Error bulk generating QR codes:', error);
-      showAlert('Failed to generate QR codes', 'error');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   const filteredStudents = students.filter(student => {
+    const lrnStr = student.lrn ? String(student.lrn) : '';
+    const fullName = student.full_name || `${student.last_name}, ${student.first_name} ${student.middle_name || ''}`;
+    const firstNameLastName = `${student.first_name} ${student.last_name}`;
+    
     const matchesSearch = 
-      (student.lrn && student.lrn.includes(searchTerm)) ||
-      student.full_name?.toLowerCase().includes(searchTerm.toLowerCase());
+      lrnStr.includes(searchTerm) ||
+      firstNameLastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      fullName.toLowerCase().includes(searchTerm.toLowerCase());
+    
     const matchesGrade = filterGrade === 'all' || student.grade_level === parseInt(filterGrade);
     const matchesSection = filterSection === 'all' || student.section === filterSection;
+    
     return matchesSearch && matchesGrade && matchesSection;
   });
 
@@ -268,21 +234,22 @@ const GenerateQR = () => {
             <div>
               <h1 className="text-2xl font-bold text-gray-800 tracking-tight flex items-center gap-2">
                 <QrCode size={24} className="text-indigo-600" />
-                Generate QR Codes
+                Student QR Codes
               </h1>
               <p className="text-gray-500 text-sm mt-1">
-                Generate QR codes for students for quick attendance tracking
+                View and download QR codes for all students (automatically generated)
               </p>
             </div>
             
-            <button 
-              onClick={handleBulkGenerate}
-              disabled={isGenerating}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-sm font-medium disabled:opacity-50"
-            >
-              <Zap size={16} />
-              Bulk Generate
-            </button>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => window.print()}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-all text-sm font-medium"
+              >
+                <Printer size={16} />
+                Print List
+              </button>
+            </div>
           </div>
         </div>
 
@@ -338,11 +305,11 @@ const GenerateQR = () => {
           <div className="bg-white border border-gray-100 rounded-xl p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-400 uppercase">Without QR</p>
-                <p className="text-2xl font-bold text-amber-600">{stats.noQRCode || students.filter(s => !s.has_qr).length}</p>
+                <p className="text-xs text-gray-400 uppercase">Ready to Print</p>
+                <p className="text-2xl font-bold text-amber-600">{stats.hasQRCode || students.filter(s => s.has_qr).length}</p>
               </div>
               <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center">
-                <AlertCircle size={18} className="text-amber-600" />
+                <Printer size={18} className="text-amber-600" />
               </div>
             </div>
           </div>
@@ -350,11 +317,11 @@ const GenerateQR = () => {
           <div className="bg-white border border-gray-100 rounded-xl p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-400 uppercase">Generated Today</p>
-                <p className="text-2xl font-bold text-purple-600">{stats.generatedToday || 0}</p>
+                <p className="text-xs text-gray-400 uppercase">Auto-Generated</p>
+                <p className="text-2xl font-bold text-purple-600">✓</p>
               </div>
               <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
-                <Clock size={18} className="text-purple-600" />
+                <Zap size={18} className="text-purple-600" />
               </div>
             </div>
           </div>
@@ -425,12 +392,12 @@ const GenerateQR = () => {
                     {student.has_qr ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-medium bg-green-100 text-green-700">
                         <CheckCircle size={9} />
-                        Has QR
+                        Ready
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-medium bg-gray-100 text-gray-500">
-                        <AlertCircle size={9} />
-                        No QR
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-medium bg-yellow-100 text-yellow-700">
+                        <Loader2 size={9} className="animate-spin" />
+                        Syncing
                       </span>
                     )}
                   </div>
@@ -445,20 +412,16 @@ const GenerateQR = () => {
                   </div>
 
                   <button
-                    onClick={() => generateQRCode(student)}
-                    disabled={isGenerating}
+                    onClick={() => viewQRCode(student)}
+                    disabled={!student.has_qr}
                     className={`w-full py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-2 ${
                       student.has_qr
-                        ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                        ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                        : 'bg-gray-100 text-gray-500 cursor-not-allowed'
                     }`}
                   >
-                    {isGenerating && selectedStudent?.id === student.id ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <QrCode size={14} />
-                    )}
-                    {student.has_qr ? 'QR Code Generated' : 'Generate QR Code'}
+                    <Eye size={14} />
+                    View QR Code
                   </button>
                 </div>
               </div>
@@ -477,7 +440,7 @@ const GenerateQR = () => {
           </div>
         )}
 
-        {/* QR Code Modal */}
+        {/* QR Code View Modal */}
         {qrCodeUrl && selectedStudent && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
@@ -536,4 +499,4 @@ const GenerateQR = () => {
   );
 };
 
-export default GenerateQR;
+export default ViewQR;

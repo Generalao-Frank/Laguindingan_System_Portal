@@ -7,11 +7,13 @@ use App\Models\Grade;
 use App\Models\Enrollment;
 use App\Models\User;
 use App\Models\TeacherAssignment;
+use App\Models\StudentsInfo;
 use App\Models\Teacher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class GradeController extends Controller
 {
@@ -328,4 +330,70 @@ class GradeController extends Controller
         
         return 'Unknown Teacher';
     }
+
+    /**
+ * Get grades for a specific student
+ */
+public function getStudentGrades($studentId)
+{
+    try {
+        // Find the student's active enrollment
+        $studentInfo = StudentsInfo::where('user_id', $studentId)->first();
+        
+        if (!$studentInfo) {
+            return response()->json([
+                'success' => true,
+                'grades' => []
+            ]);
+        }
+        
+        $activeEnrollment = Enrollment::where('student_id', $studentInfo->id)
+            ->where('status', 'Active')
+            ->first();
+            
+        if (!$activeEnrollment) {
+            return response()->json([
+                'success' => true,
+                'grades' => []
+            ]);
+        }
+        
+        // Get all grades for this enrollment
+        $grades = Grade::where('enrollment_id', $activeEnrollment->id)
+            ->with('subject')
+            ->get()
+            ->groupBy('subject_id')
+            ->map(function($subjectGrades) {
+                $subject = $subjectGrades->first()->subject;
+                $gradesByQuarter = [];
+                
+                foreach ($subjectGrades as $grade) {
+                    $quarterAvg = round(($grade->written_works + $grade->performance_tasks + $grade->quarterly_assessment) / 3, 1);
+                    $gradesByQuarter['q' . $grade->quarter_id] = $quarterAvg;
+                }
+                
+                return [
+                    'subject_name' => $subject->subject_name,
+                    'q1' => $gradesByQuarter['q1'] ?? null,
+                    'q2' => $gradesByQuarter['q2'] ?? null,
+                    'q3' => $gradesByQuarter['q3'] ?? null,
+                    'q4' => $gradesByQuarter['q4'] ?? null,
+                    'average' => !empty($gradesByQuarter) ? round(array_sum($gradesByQuarter) / count($gradesByQuarter), 1) : null,
+                ];
+            })->values();
+        
+        return response()->json([
+            'success' => true,
+            'grades' => $grades
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('Get student grades error: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch grades',
+            'grades' => []
+        ], 500);
+    }
+}
 }

@@ -5,7 +5,8 @@ import {
   Users, BookOpen, Calendar, CheckCircle, AlertCircle, 
   Search, RefreshCw, ArrowLeft, School, GraduationCap,
   ChevronRight, Briefcase, UserCheck, Clock, Filter,
-  UserPlus, UserMinus, Award, TrendingUp, AlertTriangle
+  UserPlus, UserMinus, Award, TrendingUp, AlertTriangle,
+  Image as ImageIcon
 } from 'lucide-react';
 import axios from 'axios';
 import API_URL from '../config';
@@ -49,11 +50,31 @@ const TeacherAssignments = () => {
   const [filteredSectionsByGrade, setFilteredSectionsByGrade] = useState([]);
   const [filteredSubjectsByGrade, setFilteredSubjectsByGrade] = useState([]);
   
-  // Lookup for existing assignments (key = subject_id|section_id|school_year_id) → teacher_name
+  // Lookup for existing assignments
   const [existingAssignmentMap, setExistingAssignmentMap] = useState({});
-  const [duplicateInfo, setDuplicateInfo] = useState(null); // { isDuplicate, existingTeacherName }
+  const [duplicateInfo, setDuplicateInfo] = useState(null);
 
   const token = localStorage.getItem('userToken');
+
+  // Helper function to get teacher initials
+  const getInitials = (name) => {
+    if (!name) return 'T';
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  // Helper function to get profile picture URL
+  const getProfilePictureUrl = (profilePicture) => {
+    if (!profilePicture) return null;
+    // Check if it's already a full URL
+    if (profilePicture.startsWith('http')) return profilePicture;
+    // Otherwise, construct the storage URL
+    return `${API_URL}/storage/${profilePicture}`;
+  };
 
   useEffect(() => {
     fetchAssignments();
@@ -64,7 +85,6 @@ const TeacherAssignments = () => {
     fetchGradeLevels();
   }, []);
 
-  // Build existing assignment lookup (subject_id|section_id|school_year_id) → teacher_name
   useEffect(() => {
     const map = {};
     assignments.forEach(a => {
@@ -76,7 +96,6 @@ const TeacherAssignments = () => {
     setExistingAssignmentMap(map);
   }, [assignments]);
 
-  // When selected grade level changes, filter sections and subjects
   useEffect(() => {
     if (selectedGradeLevel) {
       const grade = parseInt(selectedGradeLevel);
@@ -86,7 +105,6 @@ const TeacherAssignments = () => {
       const filteredSubjects = allSubjects.filter(s => s.grade_level === grade);
       setFilteredSubjectsByGrade(filteredSubjects);
       
-      // Reset section and subject if they don't belong to this grade level
       if (formData.section_id && !filteredSections.some(s => s.id === parseInt(formData.section_id))) {
         setFormData(prev => ({ ...prev, section_id: '' }));
       }
@@ -99,7 +117,6 @@ const TeacherAssignments = () => {
     }
   }, [selectedGradeLevel, allSections, allSubjects]);
 
-  // Check duplicate in real time (based on subject + section + school year, not teacher)
   useEffect(() => {
     if (!editingAssignment && formData.subject_id && formData.section_id && formData.school_year_id) {
       const key = `${formData.subject_id}|${formData.section_id}|${formData.school_year_id}`;
@@ -167,7 +184,6 @@ const TeacherAssignments = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.data.success) {
-        // Sort sections by grade level and then section name
         const sorted = [...response.data.sections].sort((a, b) => {
           if (a.grade_level !== b.grade_level) return a.grade_level - b.grade_level;
           return a.section_name.localeCompare(b.section_name);
@@ -206,7 +222,6 @@ const TeacherAssignments = () => {
       }
     } catch (error) {
       console.error('Error fetching grade levels:', error);
-      // fallback hardcoded
       setGradeLevels([
         { id: 1, grade_level: 0, grade_display: 'Kinder' },
         { id: 2, grade_level: 1, grade_display: 'Grade 1' },
@@ -242,7 +257,6 @@ const TeacherAssignments = () => {
     setIsLoading(true);
     setError('');
 
-    // Check duplicate (subject + section + school year)
     const key = `${formData.subject_id}|${formData.section_id}|${formData.school_year_id}`;
     if (!editingAssignment && existingAssignmentMap[key]) {
       showAlert(`This subject and section combination is already assigned to ${existingAssignmentMap[key]}. Please choose another subject or section.`, 'error');
@@ -250,7 +264,6 @@ const TeacherAssignments = () => {
       return;
     }
 
-    // Grade level consistency check
     const selectedSection = allSections.find(s => s.id === parseInt(formData.section_id));
     const selectedSubject = allSubjects.find(s => s.id === parseInt(formData.subject_id));
     if (selectedSection && selectedSubject && selectedSection.grade_level !== selectedSubject.grade_level) {
@@ -325,7 +338,6 @@ const TeacherAssignments = () => {
     return `Grade ${grade}`;
   };
 
-  // Filter assignments for table
   const filteredAssignments = assignments.filter(assignment => {
     const matchesSearch = 
       assignment.teacher_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -414,7 +426,7 @@ const TeacherAssignments = () => {
           </div>
         </div>
 
-        {/* Assignments Table with VERTICAL SCROLL */}
+        {/* Assignments Table with Profile Pictures */}
         <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <div className="max-h-[500px] overflow-y-auto">
@@ -431,10 +443,40 @@ const TeacherAssignments = () => {
                 <tbody className="divide-y divide-gray-50">
                   {filteredAssignments.map(assignment => {
                     const gradeMismatch = assignment.subject_grade_level !== undefined && assignment.section_grade_level !== undefined && assignment.subject_grade_level !== assignment.section_grade_level;
+                    const profilePicUrl = getProfilePictureUrl(assignment.teacher_profile_picture);
+                    
                     return (
                       <tr key={assignment.id} className="hover:bg-gray-50/50 transition-colors group">
-                        <td className="px-5 py-3"><div className="flex items-center gap-2"><div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center"><UserCheck size={14} className="text-indigo-600" /></div><span className="font-medium">{assignment.teacher_name}</span></div></td>
-                        <td className="px-5 py-3"><div className="flex items-center gap-2"><BookOpen size={14} className="text-gray-400" /><span>{assignment.subject_name}</span></div></td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            {/* Profile Picture with fallback */}
+                            {profilePicUrl ? (
+                              <img 
+                                src={profilePicUrl}
+                                alt={assignment.teacher_name}
+                                className="w-10 h-10 rounded-full object-cover bg-gray-100 border border-gray-200"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(assignment.teacher_name)}&background=6366f1&color=fff&bold=true&size=40`;
+                                }}
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-200 flex items-center justify-center text-indigo-700 font-bold text-sm">
+                                {getInitials(assignment.teacher_name)}
+                              </div>
+                            )}
+                            <div>
+                              <p className="font-semibold text-gray-800">{assignment.teacher_name}</p>
+                              <p className="text-xs text-gray-400">Teacher</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2">
+                            <BookOpen size={14} className="text-gray-400" />
+                            <span>{assignment.subject_name}</span>
+                          </div>
+                        </td>
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-2">
                             <GraduationCap size={14} className="text-gray-400" />
@@ -444,7 +486,12 @@ const TeacherAssignments = () => {
                             {gradeMismatch && <AlertTriangle size={14} className="text-red-500" title="Grade level mismatch between subject and section" />}
                           </div>
                         </td>
-                        <td className="px-5 py-3"><div className="flex items-center gap-2"><Calendar size={14} className="text-gray-400" /><span>{assignment.school_year}</span></div></td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2">
+                            <Calendar size={14} className="text-gray-400" />
+                            <span>{assignment.school_year}</span>
+                          </div>
+                        </td>
                         <td className="px-5 py-3 text-center">
                           <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100">
                             <button onClick={() => {
@@ -458,8 +505,12 @@ const TeacherAssignments = () => {
                                 school_year_id: assignment.school_year_id?.toString() || '',
                               });
                               setShowModal(true);
-                            }} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><Edit2 size={14} /></button>
-                            <button onClick={() => handleDelete(assignment)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={14} /></button>
+                            }} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                              <Edit2 size={14} />
+                            </button>
+                            <button onClick={() => handleDelete(assignment)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
+                              <Trash2 size={14} />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -483,7 +534,6 @@ const TeacherAssignments = () => {
                 <button onClick={() => { setShowModal(false); resetModal(); }} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
               </div>
               <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Grade Level */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level *</label>
                   <select
@@ -501,7 +551,6 @@ const TeacherAssignments = () => {
                   </select>
                 </div>
 
-                {/* Section */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Section *</label>
                   <select
@@ -525,7 +574,6 @@ const TeacherAssignments = () => {
                   )}
                 </div>
 
-                {/* Subject */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
                   <select
@@ -547,7 +595,6 @@ const TeacherAssignments = () => {
                   )}
                 </div>
 
-                {/* Teacher */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Teacher *</label>
                   <select
@@ -561,7 +608,6 @@ const TeacherAssignments = () => {
                   </select>
                 </div>
 
-                {/* School Year */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">School Year *</label>
                   <select
@@ -575,7 +621,6 @@ const TeacherAssignments = () => {
                   </select>
                 </div>
 
-                {/* Duplicate warning based on subject + section + school year */}
                 {duplicateInfo && duplicateInfo.isDuplicate && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-yellow-700 text-xs flex items-center gap-2">
                     <AlertCircle size={14} /> This subject and section combination is already assigned to <strong>{duplicateInfo.existingTeacherName}</strong>. Please choose another subject or section.

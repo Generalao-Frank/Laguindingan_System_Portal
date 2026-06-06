@@ -17,6 +17,13 @@ const EnrollStudent = () => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [sections, setSections] = useState([]);
   const [gradeLevels, setGradeLevels] = useState([]);
+  const [schoolYears, setSchoolYears] = useState([]);
+  const [quarters, setQuarters] = useState([]);
+  const [currentTerm, setCurrentTerm] = useState({
+    schoolYear: 'Loading...',
+    quarter: 'Loading...',
+    status: 'Loading...'
+  });
   const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -50,10 +57,20 @@ const EnrollStudent = () => {
  
   const token = localStorage.getItem('userToken');
 
+  // Validate contact number (max 11 digits)
+  const validateContactNumber = (value) => {
+    const digitsOnly = value.replace(/\D/g, '');
+    if (digitsOnly.length > 11) {
+      return digitsOnly.slice(0, 11);
+    }
+    return digitsOnly;
+  };
+
   useEffect(() => {
     fetchGradeLevels();
     fetchSections();
     fetchStats();
+    fetchCurrentTerm();
   }, []);
 
   const fetchGradeLevels = async () => {
@@ -109,6 +126,57 @@ const EnrollStudent = () => {
     }
   };
 
+  const fetchCurrentTerm = async () => {
+    try {
+      // Fetch active school year
+      const schoolYearResponse = await axios.get(`${API_URL}/admin/school-years`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (schoolYearResponse.data.success) {
+        const activeSchoolYear = schoolYearResponse.data.school_years.find(sy => sy.is_active);
+        if (activeSchoolYear) {
+          setSchoolYears(schoolYearResponse.data.school_years);
+          
+          // Fetch quarters for the active school year
+          const quartersResponse = await axios.get(`${API_URL}/admin/school-years/${activeSchoolYear.id}/quarters`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (quartersResponse.data.success) {
+            setQuarters(quartersResponse.data.quarters);
+            const activeQuarter = quartersResponse.data.quarters.find(q => q.is_active);
+            
+            setCurrentTerm({
+              schoolYear: `${activeSchoolYear.year_start}-${activeSchoolYear.year_end}`,
+              quarter: activeQuarter ? activeQuarter.name : 'No Active Quarter',
+              status: 'Active'
+            });
+          } else {
+            setCurrentTerm({
+              schoolYear: `${activeSchoolYear.year_start}-${activeSchoolYear.year_end}`,
+              quarter: 'No quarter set',
+              status: 'Active'
+            });
+          }
+        } else {
+          setCurrentTerm({
+            schoolYear: 'No Active School Year',
+            quarter: 'N/A',
+            status: 'Inactive'
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching current term:', error);
+      setCurrentTerm({
+        schoolYear: '2025-2026',
+        quarter: '3rd Quarter',
+        status: 'Active'
+      });
+    }
+  };
+
   // Filter sections based on selected grade level ID (not numeric value)
   const filteredSections = sections.filter(
     section => section.grade_level_id === selectedGradeLevelId
@@ -136,6 +204,16 @@ const EnrollStudent = () => {
       setError('Password is required and must be at least 6 characters.');
       setLoading(false);
       return;
+    }
+
+    // Validate guardian contact number (must be exactly 11 digits if provided)
+    if (formData.guardian_contact_number) {
+      const digitsOnly = formData.guardian_contact_number.replace(/\D/g, '');
+      if (digitsOnly.length !== 11) {
+        setError('Guardian\'s contact number must be exactly 11 digits (e.g., 09171234567).');
+        setLoading(false);
+        return;
+      }
     }
 
     // Validate required fields
@@ -196,8 +274,9 @@ const EnrollStudent = () => {
         });
         setSelectedGradeLevelId('');
         
-        // Refresh stats
+        // Refresh stats and term
         fetchStats();
+        fetchCurrentTerm();
         
         // Redirect after 2 seconds
         setTimeout(() => navigate('/admin/students'), 2000);
@@ -209,6 +288,13 @@ const EnrollStudent = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Get status color
+  const getStatusColor = (status) => {
+    if (status === 'Active') return 'text-emerald-600';
+    if (status === 'Inactive') return 'text-red-600';
+    return 'text-gray-600';
   };
 
   return (
@@ -491,11 +577,21 @@ const EnrollStudent = () => {
                       <input 
                         required
                         type="tel" 
+                        maxLength="11"
                         className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none transition-all text-sm"
                         placeholder="09171234567"
                         value={formData.guardian_contact_number}
-                        onChange={(e) => setFormData({...formData, guardian_contact_number: e.target.value})}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/\D/g, '');
+                          if (value.length <= 11) {
+                            setFormData({...formData, guardian_contact_number: value});
+                          }
+                        }}
                       />
+                      <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                        <Phone size={10} />
+                        Exactly 11 digits (e.g., 09171234567)
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -657,29 +753,38 @@ const EnrollStudent = () => {
                 </li>
                 <li className="flex gap-2">
                   <span className="text-indigo-500">•</span>
+                  <span>Guardian's contact must be exactly 11 digits</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-indigo-500">•</span>
                   <span>Fields with * are required</span>
                 </li>
                 <li className="flex gap-2">
                   <span className="text-indigo-500">•</span>
                   <span>Use uppercase for names and sections</span>
                 </li>
-                <li className="flex gap-2">
-                  <span className="text-indigo-500">•</span>
-                  <span>Kinder to Grade 6 available</span>
-                </li>
               </ul>
             </div>
 
-            {/* Current Term Info */}
+            {/* Current Term Info - Updated with dynamic data */}
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
               <div className="flex items-center gap-2 mb-3">
                 <Clock size={18} className="text-indigo-600" />
                 <h3 className="text-sm font-semibold text-slate-700">Current Term</h3>
               </div>
               <div className="space-y-2">
-                <p className="text-xs text-slate-600">School Year: <span className="font-semibold">2024-2025</span></p>
-                <p className="text-xs text-slate-600">Quarter: <span className="font-semibold">1st Quarter</span></p>
-                <p className="text-xs text-slate-600">Status: <span className="text-emerald-600 font-semibold">Active</span></p>
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-slate-500">School Year:</p>
+                  <p className="text-xs font-semibold text-slate-700">{currentTerm.schoolYear}</p>
+                </div>
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-slate-500">Quarter:</p>
+                  <p className="text-xs font-semibold text-indigo-600">{currentTerm.quarter}</p>
+                </div>
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-slate-500">Status:</p>
+                  <p className={`text-xs font-semibold ${getStatusColor(currentTerm.status)}`}>{currentTerm.status}</p>
+                </div>
               </div>
             </div>
           </div>

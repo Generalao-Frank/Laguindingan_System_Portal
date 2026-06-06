@@ -20,15 +20,27 @@ class TeacherAssignmentController extends Controller
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function($assignment) {
+                // Get profile picture from users table
+                $profilePicture = null;
+                $teacherName = 'N/A';
+                
+                if ($assignment->teacher && $assignment->teacher->user) {
+                    $teacherName = $assignment->teacher->user->first_name . ' ' . $assignment->teacher->user->last_name;
+                    $profilePicture = $assignment->teacher->user->profile_picture; // ✅ Get from users table
+                }
+                
                 return [
                     'id' => $assignment->id,
                     'teacher_id' => $assignment->teacher_id,
-                    'teacher_name' => $assignment->teacher && $assignment->teacher->user ? 
-                        $assignment->teacher->user->first_name . ' ' . $assignment->teacher->user->last_name : 'N/A',
+                    'teacher_name' => $teacherName,
+                    'teacher_profile_picture' => $profilePicture, // ✅ Add profile picture
                     'subject_id' => $assignment->subject_id,
                     'subject_name' => $assignment->subject ? $assignment->subject->subject_name : 'N/A',
+                    'subject_grade_level' => $assignment->subject ? $assignment->subject->grade_level_id : null,
                     'section_id' => $assignment->section_id,
                     'section_name' => $assignment->section ? $assignment->section->section_name : 'N/A',
+                    'section_grade_level' => $assignment->section && $assignment->section->gradeLevel ? 
+                        $assignment->section->gradeLevel->grade_level : null,
                     'grade_level' => $assignment->section && $assignment->section->gradeLevel ? 
                         $assignment->section->gradeLevel->grade_level : null,
                     'grade_display' => $assignment->section && $assignment->section->gradeLevel ? 
@@ -62,6 +74,17 @@ class TeacherAssignmentController extends Controller
             ], 422);
         }
 
+        // Check grade level compatibility
+        $subject = Subject::find($request->subject_id);
+        $section = Section::with('gradeLevel')->find($request->section_id);
+        
+        if ($subject && $section && $subject->grade_level_id != $section->grade_level_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Subject grade level does not match section grade level'
+            ], 422);
+        }
+
         // Check for duplicate assignment
         $existing = TeacherAssignment::where('teacher_id', $request->teacher_id)
             ->where('subject_id', $request->subject_id)
@@ -84,10 +107,32 @@ class TeacherAssignmentController extends Controller
                 'school_year_id' => $request->school_year_id,
             ]);
 
+            // Reload with relationships to return complete data
+            $assignment->load(['teacher.user', 'subject', 'section.gradeLevel', 'schoolYear']);
+            
+            $profilePicture = $assignment->teacher && $assignment->teacher->user ? 
+                $assignment->teacher->user->profile_picture : null;
+            
+            $teacherName = $assignment->teacher && $assignment->teacher->user ? 
+                $assignment->teacher->user->first_name . ' ' . $assignment->teacher->user->last_name : 'N/A';
+
             return response()->json([
                 'success' => true,
                 'message' => 'Teacher assigned successfully',
-                'assignment' => $assignment
+                'assignment' => [
+                    'id' => $assignment->id,
+                    'teacher_id' => $assignment->teacher_id,
+                    'teacher_name' => $teacherName,
+                    'teacher_profile_picture' => $profilePicture,
+                    'subject_id' => $assignment->subject_id,
+                    'subject_name' => $assignment->subject ? $assignment->subject->subject_name : 'N/A',
+                    'section_id' => $assignment->section_id,
+                    'section_name' => $assignment->section ? $assignment->section->section_name : 'N/A',
+                    'grade_display' => $assignment->section && $assignment->section->gradeLevel ? 
+                        ($assignment->section->gradeLevel->grade_level == 0 ? 'Kinder' : 'Grade ' . $assignment->section->gradeLevel->grade_level) : 'N/A',
+                    'school_year' => $assignment->schoolYear ? 
+                        $assignment->schoolYear->year_start . '-' . $assignment->schoolYear->year_end : 'N/A',
+                ]
             ], 201);
 
         } catch (\Exception $e) {
@@ -124,6 +169,17 @@ class TeacherAssignmentController extends Controller
             ], 422);
         }
 
+        // Check grade level compatibility
+        $subject = Subject::find($request->subject_id);
+        $section = Section::with('gradeLevel')->find($request->section_id);
+        
+        if ($subject && $section && $subject->grade_level_id != $section->grade_level_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Subject grade level does not match section grade level'
+            ], 422);
+        }
+
         // Check for duplicate assignment (excluding current)
         $existing = TeacherAssignment::where('teacher_id', $request->teacher_id)
             ->where('subject_id', $request->subject_id)
@@ -147,10 +203,32 @@ class TeacherAssignmentController extends Controller
                 'school_year_id' => $request->school_year_id,
             ]);
 
+            // Reload with relationships
+            $assignment->load(['teacher.user', 'subject', 'section.gradeLevel', 'schoolYear']);
+            
+            $profilePicture = $assignment->teacher && $assignment->teacher->user ? 
+                $assignment->teacher->user->profile_picture : null;
+            
+            $teacherName = $assignment->teacher && $assignment->teacher->user ? 
+                $assignment->teacher->user->first_name . ' ' . $assignment->teacher->user->last_name : 'N/A';
+
             return response()->json([
                 'success' => true,
                 'message' => 'Assignment updated successfully',
-                'assignment' => $assignment
+                'assignment' => [
+                    'id' => $assignment->id,
+                    'teacher_id' => $assignment->teacher_id,
+                    'teacher_name' => $teacherName,
+                    'teacher_profile_picture' => $profilePicture,
+                    'subject_id' => $assignment->subject_id,
+                    'subject_name' => $assignment->subject ? $assignment->subject->subject_name : 'N/A',
+                    'section_id' => $assignment->section_id,
+                    'section_name' => $assignment->section ? $assignment->section->section_name : 'N/A',
+                    'grade_display' => $assignment->section && $assignment->section->gradeLevel ? 
+                        ($assignment->section->gradeLevel->grade_level == 0 ? 'Kinder' : 'Grade ' . $assignment->section->gradeLevel->grade_level) : 'N/A',
+                    'school_year' => $assignment->schoolYear ? 
+                        $assignment->schoolYear->year_start . '-' . $assignment->schoolYear->year_end : 'N/A',
+                ]
             ]);
 
         } catch (\Exception $e) {
@@ -186,5 +264,61 @@ class TeacherAssignmentController extends Controller
                 'message' => 'Failed to delete assignment: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    // Optional: Get assignments by teacher
+    public function getByTeacher($teacherId)
+    {
+        $assignments = TeacherAssignment::with(['teacher.user', 'subject', 'section.gradeLevel', 'schoolYear'])
+            ->where('teacher_id', $teacherId)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function($assignment) {
+                $profilePicture = $assignment->teacher && $assignment->teacher->user ? 
+                    $assignment->teacher->user->profile_picture : null;
+                    
+                return [
+                    'id' => $assignment->id,
+                    'subject_name' => $assignment->subject ? $assignment->subject->subject_name : 'N/A',
+                    'section_name' => $assignment->section ? $assignment->section->section_name : 'N/A',
+                    'grade_display' => $assignment->section && $assignment->section->gradeLevel ? 
+                        ($assignment->section->gradeLevel->grade_level == 0 ? 'Kinder' : 'Grade ' . $assignment->section->gradeLevel->grade_level) : 'N/A',
+                    'school_year' => $assignment->schoolYear ? 
+                        $assignment->schoolYear->year_start . '-' . $assignment->schoolYear->year_end : 'N/A',
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'assignments' => $assignments
+        ]);
+    }
+
+    // Optional: Get assignments by section
+    public function getBySection($sectionId)
+    {
+        $assignments = TeacherAssignment::with(['teacher.user', 'subject', 'section.gradeLevel', 'schoolYear'])
+            ->where('section_id', $sectionId)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function($assignment) {
+                $profilePicture = $assignment->teacher && $assignment->teacher->user ? 
+                    $assignment->teacher->user->profile_picture : null;
+                    
+                return [
+                    'id' => $assignment->id,
+                    'teacher_name' => $assignment->teacher && $assignment->teacher->user ? 
+                        $assignment->teacher->user->first_name . ' ' . $assignment->teacher->user->last_name : 'N/A',
+                    'teacher_profile_picture' => $profilePicture,
+                    'subject_name' => $assignment->subject ? $assignment->subject->subject_name : 'N/A',
+                    'school_year' => $assignment->schoolYear ? 
+                        $assignment->schoolYear->year_start . '-' . $assignment->schoolYear->year_end : 'N/A',
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'assignments' => $assignments
+        ]);
     }
 }

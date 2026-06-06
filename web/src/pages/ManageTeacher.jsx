@@ -3,7 +3,8 @@ import {
   UserPlus, Mail, ShieldCheck, Save, Loader2, Users, BookOpen, Award, 
   Lock, TrendingUp, CheckCircle, X, Search, Edit2, Trash2, 
   MoreVertical, Filter, Calendar, Phone, MapPin, GraduationCap,
-  Eye, ChevronRight, AlertCircle, RefreshCw, Download
+  Eye, ChevronRight, AlertCircle, RefreshCw, Download, Info,
+  User, Briefcase, IdCard, Calendar as CalendarIcon, Home, Smartphone
 } from 'lucide-react';
 import axios from 'axios';
 import API_URL from '../config';
@@ -22,11 +23,26 @@ const ManageTeacher = () => {
     password: ''
   });
   
+  const [editFormData, setEditFormData] = useState({
+    id: null,
+    firstName: '',
+    middleName: '',
+    lastName: '',
+    gender: 'Female',
+    birthdate: '',
+    address: '',
+    contactNumber: '',
+    email: '',
+    password: ''
+  });
+  
   const [teachers, setTeachers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGender, setFilterGender] = useState('all');
@@ -36,6 +52,54 @@ const ManageTeacher = () => {
 
   
   const getToken = () => localStorage.getItem('userToken');
+
+  // Tamang computation ng age
+  const calculateAge = (birthdate) => {
+    if (!birthdate) return 'N/A';
+    try {
+      const birthDate = new Date(birthdate);
+      const today = new Date();
+      
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      
+      return age;
+    } catch (error) {
+      return 'N/A';
+    }
+  };
+
+  // Format date function
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Not set';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return dateString;
+      return date.toLocaleDateString('en-PH', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch (error) {
+      return dateString;
+    }
+  };
+
+  // Format date for input (YYYY-MM-DD)
+  const formatDateForInput = (dateString) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '';
+      return date.toISOString().split('T')[0];
+    } catch (error) {
+      return '';
+    }
+  };
 
   // Fetch teachers on load
   useEffect(() => {
@@ -125,11 +189,73 @@ const ManageTeacher = () => {
           email: '',
           password: ''
         });
-        fetchTeachers(); // Refresh list
+        fetchTeachers();
       }
     } catch (error) {
       console.error("Error saving teacher:", error.response?.data);
       const errorMessage = error.response?.data?.message || error.response?.data?.errors || "Failed to create teacher account";
+      if (typeof errorMessage === 'object') {
+        const firstError = Object.values(errorMessage)[0];
+        setError(Array.isArray(firstError) ? firstError[0] : firstError);
+      } else {
+        setError(errorMessage);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateTeacher = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const token = getToken();
+      if (!token) {
+        setError('Not authenticated. Please login again.');
+        return;
+      }
+
+      const response = await axios.put(`${API_URL}/admin/teachers/${editFormData.id}`, {
+        first_name: editFormData.firstName,
+        middle_name: editFormData.middleName,
+        last_name: editFormData.lastName,
+        gender: editFormData.gender,
+        birthdate: editFormData.birthdate,
+        address: editFormData.address,
+        contact_number: editFormData.contactNumber,
+        email: editFormData.email,
+        password: editFormData.password || undefined,
+      }, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.data.success) {
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 3000);
+        setShowEditModal(false);
+        setEditFormData({
+          id: null,
+          firstName: '',
+          middleName: '',
+          lastName: '',
+          gender: 'Female',
+          birthdate: '',
+          address: '',
+          contactNumber: '',
+          email: '',
+          password: ''
+        });
+        fetchTeachers();
+      }
+    } catch (error) {
+      console.error("Error updating teacher:", error.response?.data);
+      const errorMessage = error.response?.data?.message || error.response?.data?.errors || "Failed to update teacher account";
       if (typeof errorMessage === 'object') {
         const firstError = Object.values(errorMessage)[0];
         setError(Array.isArray(firstError) ? firstError[0] : firstError);
@@ -150,11 +276,33 @@ const ManageTeacher = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       setShowDeleteModal(false);
+      setSelectedTeacher(null);
       fetchTeachers();
     } catch (error) {
       console.error('Error deleting teacher:', error);
       setError(error.response?.data?.message || 'Failed to delete teacher');
     }
+  };
+
+  const handleViewDetails = (teacher) => {
+    setSelectedTeacher(teacher);
+    setShowViewModal(true);
+  };
+
+  const handleEditClick = (teacher) => {
+    setEditFormData({
+      id: teacher.id,
+      firstName: teacher.first_name || '',
+      middleName: teacher.middle_name || '',
+      lastName: teacher.last_name || '',
+      gender: teacher.gender || 'Female',
+      birthdate: formatDateForInput(teacher.birthdate),
+      address: teacher.address || '',
+      contactNumber: teacher.contact_number || '',
+      email: teacher.email || '',
+      password: ''
+    });
+    setShowEditModal(true);
   };
 
   const filteredTeachers = teachers.filter(teacher => {
@@ -434,8 +582,16 @@ const ManageTeacher = () => {
                     <div className="p-5">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-base shadow-md">
-                            {getInitials(teacher.first_name, teacher.last_name)}
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-base shadow-md overflow-hidden">
+                            {teacher.profile_picture ? (
+                              <img 
+                                src={teacher.profile_picture} 
+                                alt="Profile" 
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              getInitials(teacher.first_name, teacher.last_name)
+                            )}
                           </div>
                           <div>
                             <h3 className="font-semibold text-slate-800">
@@ -444,17 +600,16 @@ const ManageTeacher = () => {
                             <p className="text-xs text-indigo-600 font-mono mt-0.5">{teacher.employee_id}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
-                            onClick={() => {
-                              setSelectedTeacher(teacher);
-                              setShowDeleteModal(true);
-                            }}
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+                        <button 
+                          onClick={() => {
+                            setSelectedTeacher(teacher);
+                            setShowDeleteModal(true);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          title="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
 
                       <div className="mt-4 space-y-2">
@@ -466,9 +621,9 @@ const ManageTeacher = () => {
                           <Phone size={12} />
                           <span>{teacher.contact_number || 'N/A'}</span>
                         </div>
-                        <div className="flex items-group gap-2 text-xs text-gray-500">
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
                           <Calendar size={12} />
-                          <span>{teacher.birthdate || 'Birthdate not set'}</span>
+                          <span>{formatDate(teacher.birthdate) !== 'Not set' ? formatDate(teacher.birthdate) : 'Birthdate not set'}</span>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <MapPin size={12} />
@@ -481,7 +636,10 @@ const ManageTeacher = () => {
                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
                           <span className="text-[10px] font-medium text-emerald-600">{teacher.status || 'Active'}</span>
                         </div>
-                        <button className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1">
+                        <button 
+                          onClick={() => handleViewDetails(teacher)}
+                          className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
+                        >
                           View Details <ChevronRight size={12} />
                         </button>
                       </div>
@@ -510,6 +668,294 @@ const ManageTeacher = () => {
           </div>
         </div>
       </div>
+
+      {/* View Details Modal */}
+      {showViewModal && selectedTeacher && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 rounded-t-2xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-white font-bold text-xl shadow-md overflow-hidden">
+                  {selectedTeacher.profile_picture ? (
+                    <img 
+                      src={selectedTeacher.profile_picture} 
+                      alt="Profile" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    getInitials(selectedTeacher.first_name, selectedTeacher.last_name)
+                  )}
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Teacher Details</h2>
+                  <p className="text-indigo-100 text-sm">{selectedTeacher.employee_id}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowViewModal(false)}
+                className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6">
+              {/* Personal Information Section */}
+              <div>
+                <h3 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
+                  <User size={18} className="text-indigo-500" />
+                  Personal Information
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Full Name</p>
+                    <p className="text-sm font-medium text-gray-800">
+                      {selectedTeacher.first_name} {selectedTeacher.middle_name} {selectedTeacher.last_name}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Gender</p>
+                    <p className="text-sm font-medium text-gray-800">{selectedTeacher.gender}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Birthdate</p>
+                    <p className="text-sm font-medium text-gray-800">{formatDate(selectedTeacher.birthdate)}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Age</p>
+                    <p className="text-sm font-medium text-gray-800">
+                      {selectedTeacher.birthdate ? 
+                        `${calculateAge(selectedTeacher.birthdate)} years old` : 
+                        'N/A'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact Information Section */}
+              <div>
+                <h3 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
+                  <Smartphone size={18} className="text-indigo-500" />
+                  Contact Information
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Email Address</p>
+                    <p className="text-sm font-medium text-gray-800">{selectedTeacher.email || 'Not provided'}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Contact Number</p>
+                    <p className="text-sm font-medium text-gray-800">{selectedTeacher.contact_number || 'Not provided'}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3 md:col-span-2">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Address</p>
+                    <p className="text-sm font-medium text-gray-800">{selectedTeacher.address || 'Not provided'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Employment Information Section */}
+              <div>
+                <h3 className="text-base font-semibold text-gray-800 flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
+                  <Briefcase size={18} className="text-indigo-500" />
+                  Employment Information
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Employee ID</p>
+                    <p className="text-sm font-medium text-gray-800 font-mono">{selectedTeacher.employee_id}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Status</p>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                      <p className="text-sm font-medium text-emerald-600">{selectedTeacher.status || 'Active'}</p>
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wider">Date Registered</p>
+                    <p className="text-sm font-medium text-gray-800">{formatDate(selectedTeacher.created_at) || 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end gap-3 border-t border-gray-100">
+              <button
+                onClick={() => setShowViewModal(false)}
+                className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setShowViewModal(false);
+                  handleEditClick(selectedTeacher);
+                }}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium flex items-center gap-2"
+              >
+                <Edit2 size={14} />
+                Edit Teacher
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Teacher Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-4 rounded-t-2xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Edit2 size={24} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Edit Teacher</h2>
+                  <p className="text-amber-100 text-sm">Update teacher information</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowEditModal(false)}
+                className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleUpdateTeacher} className="p-6 space-y-5">
+              {/* Name Fields */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">First Name *</label>
+                  <input 
+                    type="text" 
+                    value={editFormData.firstName}
+                    onChange={(e) => setEditFormData({...editFormData, firstName: e.target.value})}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Middle Name</label>
+                  <input 
+                    type="text" 
+                    value={editFormData.middleName}
+                    onChange={(e) => setEditFormData({...editFormData, middleName: e.target.value})}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Last Name *</label>
+                  <input 
+                    type="text" 
+                    value={editFormData.lastName}
+                    onChange={(e) => setEditFormData({...editFormData, lastName: e.target.value})}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Gender & Birthdate */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Gender *</label>
+                  <select 
+                    value={editFormData.gender}
+                    onChange={(e) => setEditFormData({...editFormData, gender: e.target.value})}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm"
+                    required
+                  >
+                    <option value="Female">Female</option>
+                    <option value="Male">Male</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Birthdate</label>
+                  <input 
+                    type="date" 
+                    value={editFormData.birthdate}
+                    onChange={(e) => setEditFormData({...editFormData, birthdate: e.target.value})}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Address */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Address</label>
+                <input 
+                  type="text" 
+                  value={editFormData.address}
+                  onChange={(e) => setEditFormData({...editFormData, address: e.target.value})}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm"
+                />
+              </div>
+
+              {/* Contact Number & Email */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Contact Number</label>
+                  <input 
+                    type="tel" 
+                    value={editFormData.contactNumber}
+                    onChange={(e) => setEditFormData({...editFormData, contactNumber: e.target.value})}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Email Address</label>
+                  <input 
+                    type="email" 
+                    value={editFormData.email}
+                    onChange={(e) => setEditFormData({...editFormData, email: e.target.value})}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Password (optional) */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">New Password (optional)</label>
+                <input 
+                  type="password" 
+                  placeholder="Leave blank to keep current password"
+                  value={editFormData.password}
+                  onChange={(e) => setEditFormData({...editFormData, password: e.target.value})}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-200 outline-none text-sm"
+                />
+                <p className="text-[9px] text-gray-400 mt-1">Only fill this if you want to change the password</p>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                >
+                  {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  {isLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && selectedTeacher && (

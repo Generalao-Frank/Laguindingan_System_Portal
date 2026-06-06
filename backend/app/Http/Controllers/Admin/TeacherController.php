@@ -32,40 +32,41 @@ class TeacherController extends Controller
     }
 
     // Get all teachers
-    public function index()
-    {
-        // Siguraduhin na lahat ng teacher users ay may teacher record
-        $this->syncMissingTeacherRecords();
+public function index()
+{
+    // Siguraduhin na lahat ng teacher users ay may teacher record
+    $this->syncMissingTeacherRecords();
 
-        $teachers = User::where('role', 'Teacher')
-            ->whereHas('teacher') // ngayon lahat ay dapat mayroon na
-            ->with('teacher')
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function($user) {
-                return [
-                    'id' => $user->teacher->id,                // ✅ ang tamang teachers.id
-                    'user_id' => $user->id,
-                    'first_name' => $user->first_name,
-                    'middle_name' => $user->middle_name,
-                    'last_name' => $user->last_name,
-                    'gender' => $user->gender,                  // ✅ IDINAGDAG
-                    'birthdate' => $user->birthdate,            // ✅ IDINAGDAG
-                    'address' => $user->address,                // ✅ IDINAGDAG
-                    'contact_number' => $user->contact_number,  // ✅ IDINAGDAG
-                    'employee_id' => $user->teacher->employee_id,
-                    'email' => $user->email,
-                    'username' => $user->username,
-                    'status' => 'Active',
-                    'created_at' => $user->created_at,
-                ];
-            });
+    $teachers = User::where('role', 'Teacher')
+        ->whereHas('teacher')
+        ->with('teacher')
+        ->orderBy('created_at', 'desc')
+        ->get()
+        ->map(function($user) {
+            return [
+                'id' => $user->teacher->id,
+                'user_id' => $user->id,
+                'first_name' => $user->first_name,
+                'middle_name' => $user->middle_name,
+                'last_name' => $user->last_name,
+                'gender' => $user->gender,
+                'birthdate' => $user->birthdate,
+                'address' => $user->address,
+                'contact_number' => $user->contact_number,
+                'employee_id' => $user->teacher->employee_id,
+                'email' => $user->email,
+                'username' => $user->username,
+                'profile_picture' => $user->profile_picture, // ✅ IDAGDAG ITO
+                'status' => 'Active',
+                'created_at' => $user->created_at,
+            ];
+        });
 
-        return response()->json([
-            'success' => true,
-            'teachers' => $teachers
-        ]);
-    }
+    return response()->json([
+        'success' => true,
+        'teachers' => $teachers
+    ]);
+}
 
     // Create new teacher
     public function store(Request $request)

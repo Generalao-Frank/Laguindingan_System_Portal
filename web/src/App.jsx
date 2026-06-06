@@ -31,6 +31,12 @@ import EnrollmentHistory from './pages/EnrollmentHistory';
 import BulkEnrollment from './pages/BulkEnrollment';
 import Meetings from './pages/Meetings';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
+import StudentPerformance from './pages/StudentPerformance';
+import EnrollmentReports from './pages/EnrollmentReports'
+import GraduationReports from './pages/GraduationReports';
+import AuditLogs from './pages/AuditLogs';
+import Settings from './pages/Settings';
+import SystemHealth from './pages/SystemHealth';
 // import Activities from './pages/Activities';
 
 
@@ -135,6 +141,16 @@ function App() {
                         <Route path="/admin/enrollments/bulk" element={<BulkEnrollment />} />
                         <Route path="/admin/meetings" element={<Meetings />} />
                         <Route path="/admin/analytics" element={<AnalyticsDashboard />} />
+                        <Route path="/admin/reports/performance" element={<StudentPerformance />} />
+                         <Route path="/admin/reports/enrollment" element={<EnrollmentReports />} /> 
+                         <Route path="/admin/reports/graduation" element={<GraduationReports />} />
+                         <Route path="/admin/audit-logs" element={<AuditLogs />} />
+                         <Route path="/admin/settings" element={<Settings />} />
+                         <Route path="/admin/system-health" element={<SystemHealth />} />
+                         
+                  
+
+
                         {/* <Route path="/admin/activities" element={<Activities />} /> */}
 
                         {/* Fallback - redirect to dashboard */}

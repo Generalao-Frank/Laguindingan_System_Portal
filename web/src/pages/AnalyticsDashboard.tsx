@@ -11,32 +11,55 @@ import {
 } from 'recharts';
 import API_URL from '../config';
 
-// Type definitions para sa state
+// --- Type Definitions ---
 interface GenderItem {
   name: string;
   value: number;
   fill: string;
 }
 
-interface SubjectItem {
-  subject: string;
-  avg_grade: number;
-}
-
-interface AttendanceItem {
-  month: string;
-  present: number;
-  absent: number;
-}
-
-interface TrendItem {
-  year: string;
-  count: number;
-}
-
-interface GradeDistItem {
+interface GradeLevelItem {
   grade: string;
-  count: number;
+  students: number;
+}
+
+interface EnrollmentTrendItem {
+  month: string;
+  enrolled: number;
+}
+
+interface AttendanceQuarterItem {
+  quarter: string;
+  present: number;
+  late: number;
+  absent: number;
+  rate: number;
+}
+
+interface SubjectPerformanceItem {
+  subject: string;
+  avg: number;
+}
+
+interface DashboardStats {
+  totalStudents: number;
+  totalTeachers: number;
+  activeEnrollments: number;
+  enrollmentRate: number;
+  attendanceRate: number;
+  graduationRate: number;
+}
+
+interface DashboardResponse {
+  success: boolean;
+  stats: DashboardStats;
+  genderData: GenderItem[];
+  gradeLevelData: GradeLevelItem[];
+  enrollmentTrend: EnrollmentTrendItem[];
+  attendanceByQuarter: AttendanceQuarterItem[];
+  subjectPerformance: SubjectPerformanceItem[];
+  activeSchoolYear: string | null;
+  activeQuarter: string | null;
 }
 
 const AnalyticsDashboard = () => {
@@ -50,11 +73,11 @@ const AnalyticsDashboard = () => {
     femaleCount: 0,
     thisMonthEnrollments: 0
   });
-  const [enrollmentTrend, setEnrollmentTrend] = useState<TrendItem[]>([]);
-  const [gradeDistribution, setGradeDistribution] = useState<GradeDistItem[]>([]);
+  const [enrollmentTrend, setEnrollmentTrend] = useState<{ year: string; count: number }[]>([]);
+  const [gradeDistribution, setGradeDistribution] = useState<GradeLevelItem[]>([]);
   const [genderData, setGenderData] = useState<GenderItem[]>([]);
-  const [attendanceData, setAttendanceData] = useState<AttendanceItem[]>([]);
-  const [topSubjects, setTopSubjects] = useState<SubjectItem[]>([]);
+  const [attendanceData, setAttendanceData] = useState<{ month: string; present: number; absent: number }[]>([]);
+  const [topSubjects, setTopSubjects] = useState<{ subject: string; avg: number }[]>([]);
 
   const token = localStorage.getItem('userToken');
 
@@ -66,21 +89,56 @@ const AnalyticsDashboard = () => {
     setLoading(true);
     setError('');
     try {
-      const [statsRes, trendRes, gradeRes, genderRes, attendanceRes, subjectsRes] = await Promise.all([
-        axios.get(`${API_URL}/admin/dashboard/stats`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`${API_URL}/admin/dashboard/enrollment-trend`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`${API_URL}/admin/dashboard/grade-distribution`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`${API_URL}/admin/dashboard/gender-stats`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`${API_URL}/admin/dashboard/attendance-stats`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`${API_URL}/admin/dashboard/top-subjects`, { headers: { Authorization: `Bearer ${token}` } })
-      ]);
+      const response = await axios.get<DashboardResponse>(`${API_URL}/admin/dashboard`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-      if (statsRes.data.success) setStats(statsRes.data.stats);
-      if (trendRes.data.success) setEnrollmentTrend(trendRes.data.trend);
-      if (gradeRes.data.success) setGradeDistribution(gradeRes.data.distribution);
-      if (genderRes.data.success) setGenderData(genderRes.data.gender);
-      if (attendanceRes.data.success) setAttendanceData(attendanceRes.data.attendance);
-      if (subjectsRes.data.success) setTopSubjects(subjectsRes.data.subjects);
+      if (response.data.success) {
+        const data = response.data;
+
+        // Extract male/female counts
+        const maleCount = data.genderData?.find((g: GenderItem) => g.name === 'Male')?.value || 0;
+        const femaleCount = data.genderData?.find((g: GenderItem) => g.name === 'Female')?.value || 0;
+
+        // Current month's enrollments from enrollmentTrend
+        const currentMonthIndex = new Date().getMonth();
+        const thisMonthEnrollments = data.enrollmentTrend?.[currentMonthIndex]?.enrolled || 0;
+
+        setStats({
+          totalStudents: data.stats.totalStudents,
+          totalTeachers: data.stats.totalTeachers,
+          activeEnrollments: data.stats.activeEnrollments,
+          maleCount,
+          femaleCount,
+          thisMonthEnrollments
+        });
+
+        // Enrollment trend: map month names to year field for AreaChart
+        const trend = (data.enrollmentTrend || []).map((item: EnrollmentTrendItem) => ({
+          year: item.month,
+          count: item.enrolled
+        }));
+        setEnrollmentTrend(trend);
+
+        // Grade distribution
+        setGradeDistribution(data.gradeLevelData || []);
+
+        // Gender data
+        setGenderData(data.genderData || []);
+
+        // Attendance data: map quarter to month and take present/absent counts
+        const attendance = (data.attendanceByQuarter || []).map((q: AttendanceQuarterItem) => ({
+          month: q.quarter,
+          present: q.present,
+          absent: q.absent
+        }));
+        setAttendanceData(attendance);
+
+        // Top subjects
+        setTopSubjects(data.subjectPerformance || []);
+      } else {
+        setError('Failed to load dashboard data');
+      }
     } catch (err) {
       console.error('API Error:', err);
       setError('Failed to load data from server. Please check your connection.');
@@ -187,7 +245,7 @@ const AnalyticsDashboard = () => {
           <div className="bg-white rounded-xl p-5 shadow-sm border">
             <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
               <TrendingUp size={18} className="text-indigo-500" />
-              Enrollment Trend by School Year
+              Enrollment Trend ({new Date().getFullYear()})
             </h3>
             {enrollmentTrend.length ? (
               <ResponsiveContainer width="100%" height={280}>
@@ -254,7 +312,7 @@ const AnalyticsDashboard = () => {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="count" fill="#10B981" />
+                  <Bar dataKey="students" fill="#10B981" />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -264,7 +322,7 @@ const AnalyticsDashboard = () => {
           <div className="bg-white rounded-xl p-5 shadow-sm border">
             <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
               <Clock size={18} className="text-orange-500" />
-              Monthly Attendance Rate (%)
+              Attendance by Quarter
             </h3>
             {attendanceData.length ? (
               <ResponsiveContainer width="100%" height={300}>
@@ -274,8 +332,8 @@ const AnalyticsDashboard = () => {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="present" stroke="#3B82F6" strokeWidth={2} name="Present %" />
-                  <Line type="monotone" dataKey="absent" stroke="#EF4444" strokeWidth={2} name="Absent %" />
+                  <Line type="monotone" dataKey="present" stroke="#3B82F6" strokeWidth={2} name="Present" />
+                  <Line type="monotone" dataKey="absent" stroke="#EF4444" strokeWidth={2} name="Absent" />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
@@ -301,8 +359,8 @@ const AnalyticsDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {topSubjects.map((subject: SubjectItem, idx: number) => {
-                    const grade = subject.avg_grade;
+                  {topSubjects.map((subject, idx) => {
+                    const grade = subject.avg;
                     let colorClass = 'text-green-600';
                     if (grade < 75) colorClass = 'text-red-600';
                     else if (grade < 85) colorClass = 'text-yellow-600';
